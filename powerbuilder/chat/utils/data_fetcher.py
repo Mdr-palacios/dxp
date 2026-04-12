@@ -1,12 +1,18 @@
 # powerbuilder/chat/utils/data_fetcher.py
 import os
 import requests
+from dotenv import load_dotenv
 from .census_vars import (
     VOTER_DEMOGRAPHICS,
     RACE_TABLES,
     SEX_AGE_OFFSETS,
     ANCESTRY_MAP
  ) # Your human-readable map
+
+load_dotenv()
+
+CENSUS_KEY = os.getenv("CENSUS_API_KEY")
+FEC_KEY = os.getenv("FEC_API_KEY")
 
 class DataFetcher:
     
