@@ -1,4 +1,8 @@
 import os
+
+from dotenv import load_dotenv
+load_dotenv()
+
 from llama_parse import LlamaParse
 from langchain_pinecone import PineconeVectorStore
 from langchain_openai import OpenAIEmbeddings
@@ -45,22 +49,31 @@ def ingestor_node(state: AgentState):
             , openai_api_key=os.environ.get("OPENAI_API_KEY")
             )
 
-        # upsert to Pinecone in org-specific namespace
-        vectorstore = PineconeVectorStore.from_documents(
+        # upsert to Pinecone in org-specific namespace (return value unused; side effect is the upsert)
+        PineconeVectorStore.from_documents(
             documents=langchain_docs,
             embedding=embeddings,
             index_name=os.environ.get("OPENAI_PINECONE_INDEX_NAME"),
             namespace=org_namespace
         )
 
-        return {"research_results": [f"Successfully indexed {os.path.basename(file_path)} to the {org_namespace} research library."]}
-    
+        return {
+            "research_results": [f"Successfully indexed {os.path.basename(file_path)} to the {org_namespace} research library."],
+            "active_agents": ["ingestor"],
+        }
+
     # for structured data (.csv files)
     elif file_ext == ".csv":
         # might want to move this into a SQL database or Pandas storage later
         save_dir = f"media/voter_files/{org_namespace}/"
         os.makedirs(save_dir, exist_ok=True)
-        
-        return {"research_results": [f"Voter file {os.path.basename(file_path)} has been saved to the workspace data folder."]}
-    
-    return {"research_results": ["Unsupported file type uploaded."]}
+
+        return {
+            "research_results": [f"Voter file {os.path.basename(file_path)} has been saved to the workspace data folder."],
+            "active_agents": ["ingestor"],
+        }
+
+    return {
+        "research_results": ["Unsupported file type uploaded."],
+        "active_agents": ["ingestor"],
+    }

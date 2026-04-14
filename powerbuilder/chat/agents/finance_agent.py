@@ -30,6 +30,9 @@ import os
 import re
 from typing import Optional
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from langchain_openai import ChatOpenAI
 
 from ..utils.data_fetcher import DataFetcher
@@ -470,6 +473,13 @@ def finance_node(state: AgentState) -> dict:
         target_year   = prior.get("target_year", 2026)
     else:
         # Fallback: extract from query via LLM
+        query = state.get("query", "").strip()
+        if not query:
+            return {
+                "errors":        ["FinanceAgent: state['query'] is missing or empty — cannot extract district parameters."],
+                "active_agents": ["finance"],
+            }
+
         llm = ChatOpenAI(
             model="gpt-4o",
             temperature=0,
@@ -478,7 +488,7 @@ def finance_node(state: AgentState) -> dict:
         extraction_prompt = f"""
 Extract electoral district information from this query. Return ONLY these lines, no extra text.
 
-Query: "{state['query']}"
+Query: "{query}"
 
 STATE: [full state name or abbreviation]
 DISTRICT_TYPE: [congressional | state_senate | state_house | senate]
@@ -542,23 +552,27 @@ TARGET_YEAR: [4-digit election year, default 2026]
         openai_api_key=os.environ["OPENAI_API_KEY"],
     )
 
-    budget_prompt = f"""
+    budget_available: Optional[float] = None
+    _budget_query = state.get("query", "").strip()
+    if not _budget_query:
+        logger.debug("FinanceAgent: query is empty — skipping budget extraction, defaulting to None.")
+    else:
+        budget_prompt = f"""
 Does the following query mention a specific campaign budget or available funds?
 If yes, return the dollar amount as a plain number (e.g. 50000).
 If no budget is mentioned, return NONE.
 
-Query: "{state['query']}"
+Query: "{_budget_query}"
 
 BUDGET: [number or NONE]
 """
-    budget_available: Optional[float] = None
-    try:
-        budget_raw = llm.invoke(budget_prompt).content.strip()
-        match = re.search(r"BUDGET:\s*([\d,\.]+|NONE)", budget_raw, re.IGNORECASE)
-        if match and match.group(1).upper() != "NONE":
-            budget_available = float(re.sub(r"[,]", "", match.group(1)))
-    except Exception as e:
-        logger.warning(f"FinanceAgent: Budget extraction failed — {e}")
+        try:
+            budget_raw = llm.invoke(budget_prompt).content.strip()
+            match = re.search(r"BUDGET:\s*([\d,\.]+|NONE)", budget_raw, re.IGNORECASE)
+            if match and match.group(1).upper() != "NONE":
+                budget_available = float(re.sub(r"[,]", "", match.group(1)))
+        except Exception as e:
+            logger.warning(f"FinanceAgent: Budget extraction failed — {e}")
 
     # -----------------------------------------------------------------------
     # 3. Load unit costs (from tool_templates/ or defaults)

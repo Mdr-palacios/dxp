@@ -3,6 +3,9 @@ import logging
 import os
 from typing import List
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import pandas as pd
 import requests
 from langchain_openai import ChatOpenAI

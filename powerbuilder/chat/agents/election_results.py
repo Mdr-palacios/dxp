@@ -30,6 +30,9 @@ import os
 import time
 from typing import Optional
 
+from dotenv import load_dotenv
+load_dotenv()
+
 import pandas as pd
 from langchain_openai import ChatOpenAI
 
@@ -262,6 +265,11 @@ def _resolve_params(state: AgentState) -> Optional[dict]:
         }
 
     # 2. LLM extraction fallback
+    query = state.get("query", "").strip()
+    if not query:
+        logger.error("ElectionAnalyst: state['query'] is missing or empty — cannot extract district parameters.")
+        return None
+
     llm = ChatOpenAI(
         model="gpt-4o",
         temperature=0,
@@ -270,7 +278,7 @@ def _resolve_params(state: AgentState) -> Optional[dict]:
     extraction_prompt = f"""
 Extract electoral district information from this query. Return ONLY these four lines, no extra text.
 
-Query: "{state['query']}"
+Query: "{query}"
 
 STATE: [full state name or abbreviation]
 DISTRICT_TYPE: [congressional | state_senate | state_house | senate]

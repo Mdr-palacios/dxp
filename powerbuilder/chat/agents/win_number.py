@@ -1,5 +1,9 @@
 # powerbuilder/chat/agents/win_number.py
 import os
+
+from dotenv import load_dotenv
+load_dotenv()
+
 import pandas as pd
 from langchain_openai import ChatOpenAI
 from ..utils.data_fetcher import DataFetcher

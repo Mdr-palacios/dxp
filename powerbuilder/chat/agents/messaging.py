@@ -18,6 +18,9 @@ import re
 from datetime import datetime
 from typing import Optional
 
+from dotenv import load_dotenv
+load_dotenv()
+
 from langchain_openai import ChatOpenAI
 
 from .state import AgentState
@@ -414,7 +417,7 @@ Do not rename, reorder, or omit any marker.
         }
 
     # -----------------------------------------------------------------------
-    # 4. Parse into four separate Markdown strings and append to whiteboard
+    # 4. Parse into five separate Markdown strings and append to whiteboard
     # -----------------------------------------------------------------------
     sections = _parse_sections(raw_response)
 
