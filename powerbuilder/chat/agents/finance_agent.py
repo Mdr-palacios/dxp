@@ -477,7 +477,7 @@ def finance_node(state: AgentState) -> dict:
         if not query:
             return {
                 "errors":        ["FinanceAgent: state['query'] is missing or empty — cannot extract district parameters."],
-                "active_agents": ["finance"],
+                "active_agents": ["cost_calculator"],
             }
 
         llm = ChatOpenAI(
@@ -500,7 +500,7 @@ TARGET_YEAR: [4-digit election year, default 2026]
         except Exception as e:
             return {
                 "errors":        [f"FinanceAgent: LLM extraction failed — {e}"],
-                "active_agents": ["finance"],
+                "active_agents": ["cost_calculator"],
             }
 
         params: dict = {}
@@ -514,7 +514,7 @@ TARGET_YEAR: [4-digit election year, default 2026]
         if not state_fips:
             return {
                 "errors":        [f"FinanceAgent: Could not resolve state FIPS for '{state_name}'."],
-                "active_agents": ["finance"],
+                "active_agents": ["cost_calculator"],
             }
 
         district_type = params.get("DISTRICT_TYPE", "congressional").lower()
@@ -533,13 +533,13 @@ TARGET_YEAR: [4-digit election year, default 2026]
             except (ValueError, TypeError):
                 return {
                     "errors":        [f"FinanceAgent: Could not parse district number from '{dist_num_raw}'."],
-                    "active_agents": ["finance"],
+                    "active_agents": ["cost_calculator"],
                 }
             geoid = GeographyStandardizer.convert_to_geoid(state_name, dist_num, district_type)
             if isinstance(geoid, dict):
                 return {
                     "errors":        [f"FinanceAgent: {geoid.get('error')}"],
-                    "active_agents": ["finance"],
+                    "active_agents": ["cost_calculator"],
                 }
             district_id = geoid
 
@@ -685,7 +685,7 @@ BUDGET: [number or NONE]
     result = {
         "structured_data":  [structured_entry],
         "research_results": [narrative],
-        "active_agents":    ["finance"],
+        "active_agents":    ["cost_calculator"],
     }
     if errors_out:
         result["errors"] = errors_out
