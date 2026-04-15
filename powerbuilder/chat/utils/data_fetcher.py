@@ -6,8 +6,7 @@ from .census_vars import (
     VOTER_DEMOGRAPHICS,
     RACE_TABLES,
     SEX_AGE_OFFSETS,
-    ANCESTRY_MAP
- ) # Your human-readable map
+)
 
 load_dotenv()
 
@@ -50,7 +49,7 @@ class DataFetcher:
             "congressional": {"for": "congressional district:*", "in": f"state:{state_fips}"},
             "state_senate": {"for": "state legislative district (upper chamber):*", "in": f"state:{state_fips}"},
             "state_house": {"for": "state legislative district (lower chamber):*", "in": f"state:{state_fips}"},
-            "precinct": {"for": "block group:*", "in": f"state:{state_fips}"}
+            "precinct": {"for": "block group:*", "in": f"state:{state_fips} county:*"}
         }
 
         geo_config = GEO_MAP.get(geo_level, GEO_MAP["county"])
@@ -144,6 +143,134 @@ class DataFetcher:
             row['target_pop'] = sum(float(row.get(c, 0)) for c in codes if row.get(c))
             
         return raw_data
+
+    ############## 2020 DECENNIAL CENSUS -- BLOCK GROUP LEVEL ##############
+
+    @staticmethod
+    def get_decennial_vap_by_block_group(state_fips: str) -> dict:
+        """
+        Fetches Voting Age Population (18+) at block group level from the
+        2020 Decennial Census PL 94-171 redistricting file.
+
+        Variable P0030001 = Total population 18 years and over.
+
+        Returns:
+            dict mapping 12-character bg_geoid → vap (int)
+            e.g. {"440050101011": 1823}
+
+        Falls back to ACS5 total_population (B01003_001E) if the Decennial
+        API call fails. The fallback is a less precise proxy (all ages, not 18+)
+        but avoids a hard failure in the pipeline.
+        """
+        # 2020 Decennial PL94-171: P3_001N = total population 18+ (VAP)
+        # Note: 2020 Decennial uses P3_001N; 2010 used P003001 (different naming convention)
+        # Response returns component columns (state, county, tract, block group), not GEO_ID
+        url = "https://api.census.gov/data/2020/dec/pl"
+        params = {
+            "get": "P3_001N",
+            "for": "block group:*",
+            "in": f"state:{state_fips} county:* tract:*",
+            "key": os.getenv("CENSUS_API_KEY"),
+        }
+        try:
+            response = requests.get(url, params=params, timeout=30)
+            response.raise_for_status()
+            data = response.json()
+            headers = data[0]
+            result = {}
+            for row in data[1:]:
+                r = dict(zip(headers, row))
+                # Reconstruct 12-char GEOID: state(2) + county(3) + tract(6) + bg(1)
+                bg_geoid = (
+                    r.get("state", "").zfill(2)
+                    + r.get("county", "").zfill(3)
+                    + r.get("tract", "").zfill(6)
+                    + r.get("block group", "")
+                )
+                if bg_geoid:
+                    result[bg_geoid] = int(r.get("P3_001N", 0) or 0)
+            return result
+        except Exception as e:
+            print(f"  Warning: Decennial VAP fetch failed ({e}); falling back to ACS5 total_population.")
+            rows = DataFetcher.get_census_data(state_fips, ["total_population"], geo_level="precinct")
+            result = {}
+            for row in rows:
+                if "error" in row:
+                    continue
+                bg_geoid = (
+                    row.get("state", "").zfill(2)
+                    + row.get("county", "").zfill(3)
+                    + row.get("tract", "").zfill(6)
+                    + row.get("block group", "")
+                )
+                result[bg_geoid] = int(float(row.get("B01003_001E", 0) or 0))
+            return result
+
+    ############## CENSUS TIGER/LINE SPATIAL BOUNDARIES ##############
+
+    @staticmethod
+    def get_congressional_district_boundary(state_fips: str, district_id: str):
+        """
+        Downloads the 118th Congress congressional district boundary from Census
+        TIGER/Line and returns a GeoDataFrame for the target district in EPSG:4326.
+
+        The national CD shapefile (~2 MB) is cached locally at
+        data/tiger_cache/tl_2022_us_cd118.gpkg to avoid repeated downloads.
+
+        Args:
+            state_fips:  2-digit FIPS string, e.g. "44" for Rhode Island
+            district_id: 4-char GEOID (state_fips + zero-padded district),
+                         e.g. "4401" for RI-01
+
+        Returns:
+            GeoDataFrame with columns [GEOID, geometry] in EPSG:4326,
+            or None if the file cannot be downloaded or the district is not found.
+        """
+        try:
+            import geopandas as gpd
+        except ImportError:
+            print("  geopandas is required for get_congressional_district_boundary.")
+            return None
+
+        TIGER_CD_URL = (
+            "https://www2.census.gov/geo/tiger/TIGER2022/CD/tl_2022_us_cd116.zip"
+        )
+        cache_dir  = "data/tiger_cache"
+        cache_path = os.path.join(cache_dir, "tl_2022_us_cd116.gpkg")
+
+        try:
+            os.makedirs(cache_dir, exist_ok=True)
+
+            if os.path.exists(cache_path):
+                all_cds = gpd.read_file(cache_path)
+            else:
+                print("  Downloading congressional district boundaries (116th Congress)...")
+                all_cds = gpd.read_file(TIGER_CD_URL)
+                all_cds.to_file(cache_path, driver="GPKG")
+
+            # GEOID in the TIGER file is state_fips(2) + district(2), e.g. "4401"
+            district_gdf = all_cds[all_cds["GEOID"] == district_id].copy()
+            if district_gdf.empty:
+                state_ids = sorted(
+                    all_cds[all_cds["STATEFP"] == state_fips]["GEOID"].tolist()
+                )
+                print(
+                    f"  Warning: District GEOID '{district_id}' not found in TIGER CD file. "
+                    f"GEOIDs for state {state_fips}: {state_ids}"
+                )
+                return None
+
+            # Ensure WGS84 CRS (TIGER files are NAD83/EPSG:4269; reproject to 4326)
+            if district_gdf.crs is None:
+                district_gdf = district_gdf.set_crs("EPSG:4326")
+            else:
+                district_gdf = district_gdf.to_crs("EPSG:4326")
+
+            return district_gdf[["GEOID", "geometry"]].reset_index(drop=True)
+
+        except Exception as e:
+            print(f"  Warning: Could not load CD boundary for {district_id}: {e}")
+            return None
 
     ############## FEC / CAMPAIGN FINANCE DATA INGESTION -- FEDERAL ONLY ##############
     @staticmethod

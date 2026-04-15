@@ -142,11 +142,21 @@ class PrecinctsAgent:
         # e.g. "total_cvap" → "B29001_001E", raw codes pass through unchanged
         metric_to_code = {m: VOTER_DEMOGRAPHICS.get(m, m) for m in metrics}
 
-        # 1. Fetch Census block-group data for all metrics
-        raw_bg_data = DataFetcher.get_census_data(state_fips, metrics, geo_level="precinct")
+        # Some metrics are crosswalk-native: their values come from columns already
+        # present in the crosswalk CSV (built by crosswalk_builder.py) rather than
+        # fetched from the Census ACS API. "vap" → "bg_vap" is the primary example.
+        # Sending these codes to the Census API would return a 400 error.
+        CROSSWALK_NATIVE_CODES = {"bg_vap"}
+        acs_metrics = [m for m in metrics if metric_to_code.get(m) not in CROSSWALK_NATIVE_CODES]
+        # Always fetch at least one ACS variable so we have the BG geography columns
+        if not acs_metrics:
+            acs_metrics = ["total_population"]
+
+        # 1. Fetch Census block-group data for ACS metrics
+        raw_bg_data = DataFetcher.get_census_data(state_fips, acs_metrics, geo_level="precinct")
         if not raw_bg_data or "error" in raw_bg_data[0]:
             logger.error(f"Census fetch failed: {raw_bg_data}")
-            return [{"error": f"Census API failure: {raw_bg_data[0].get('error') if raw_bg_data else 'no data'}"}]
+            return {"error": f"Census API failure: {raw_bg_data[0].get('error') if raw_bg_data else 'no data'}"}
 
         bg_df = pd.DataFrame(raw_bg_data)
 
@@ -168,17 +178,29 @@ class PrecinctsAgent:
             bg_df = bg_df[bg_df["bg_geoid"].isin(district_bg_geoids)].copy()
             if bg_df.empty:
                 logger.warning(f"No block groups matched district filter for {district_id}.")
-                return [{"error": f"No Census block groups found within district {district_id}."}]
+                return {"error": f"No Census block groups found within district {district_id}."}
         else:
             logger.warning("District filter unavailable; using all state block groups.")
 
-        # 3. Load the crosswalk (built by crosswalk_builder.py)
-        crosswalk_path = f"data/crosswalks/{state_fips}_bg_to_precinct.csv"
+        # 3. Load the crosswalk (built by crosswalk_builder.py).
+        # Try district-specific crosswalk first (built with district_id arg); these
+        # contain only BGs and precincts within the target district and give correct
+        # results without relying on the Census API's unsupported BG-by-CD geography.
+        # Fall back to the full-state crosswalk when no district-specific file exists.
+        # Force bg_geoid to str: pandas auto-casts 12-digit GEOIDs to int64,
+        # which would break the merge with bg_df where bg_geoid is always a string.
+        district_crosswalk = f"data/crosswalks/{state_fips}_{district_id}_bg_to_precinct.csv"
+        state_crosswalk    = f"data/crosswalks/{state_fips}_bg_to_precinct.csv"
+        crosswalk_path     = district_crosswalk if os.path.exists(district_crosswalk) else state_crosswalk
+        if crosswalk_path == district_crosswalk:
+            logger.info(f"  Using district-specific crosswalk: {crosswalk_path}")
+        else:
+            logger.info(f"  District crosswalk not found; using state-level: {crosswalk_path}")
         try:
-            crosswalk = pd.read_csv(crosswalk_path)
+            crosswalk = pd.read_csv(crosswalk_path, dtype={"bg_geoid": str})
         except FileNotFoundError:
-            return [{"error": f"Crosswalk missing for state {state_fips}. "
-                              "Run crosswalk_builder.build_crosswalk() first."}]
+            return {"error": f"Crosswalk missing for state {state_fips}. "
+                             "Run crosswalk_builder.build_crosswalk() first."}
 
         # Normalise official_boundary to bool (CSV reads it as string)
         crosswalk["official_boundary"] = (
@@ -190,8 +212,8 @@ class PrecinctsAgent:
         merged = bg_df.merge(crosswalk, on="bg_geoid")
 
         if merged.empty:
-            return [{"error": f"Crosswalk merge produced no rows for district {district_id}. "
-                              "Verify that the crosswalk was built for this state."}]
+            return {"error": f"Crosswalk merge produced no rows for district {district_id}. "
+                             "Verify that the crosswalk was built for this state."}
 
         # 5. Apply dasymetric weights per metric and reaggregate by precinct
         # weighted_value = block_group_value * (intersection_area / bg_total_area)
@@ -226,6 +248,10 @@ class PrecinctsAgent:
         if primary_col in precinct_totals.columns:
             precinct_totals = precinct_totals.sort_values(primary_col, ascending=False)
 
+        # Count total unique precincts in crosswalk before truncating to top_n.
+        # Used for data quality check below.
+        total_precinct_count = len(precinct_totals)
+
         top_targets = precinct_totals.head(top_n).reset_index()
 
         # 7. Build standardised output schema
@@ -242,7 +268,25 @@ class PrecinctsAgent:
             record["approximate_boundary"] = bool(row.get("approximate_boundary", False))
             results.append(record)
 
-        return results
+        # 8. Data quality check: fewer than 100 precincts suggests ward/municipality-level
+        # granularity rather than individual polling-precinct granularity.
+        data_quality_note = None
+        if total_precinct_count < 100:
+            data_quality_note = (
+                "Precinct data may be reporting at ward or municipality level rather than "
+                "individual polling precinct level for this state. Targeting results reflect "
+                "broader geographic units and may be less granular than expected."
+            )
+            logger.warning(
+                f"  Data quality: only {total_precinct_count} precincts in crosswalk for "
+                f"district {district_id} — results may reflect ward/municipality-level units."
+            )
+
+        return {
+            "precincts":         results,
+            "precinct_count":    total_precinct_count,
+            "data_quality_note": data_quality_note,
+        }
 
     # ------------------------------------------------------------------
     # LangGraph node wrapper
@@ -313,18 +357,22 @@ TOP_N: [integer number of precincts to return, default 20]
                 "active_agents": ["precincts"],
             }
 
-        results = PrecinctsAgent.get_top_precincts(
+        output = PrecinctsAgent.get_top_precincts(
             state_fips, geoid, district_type, metrics, top_n
         )
 
-        # Surface any errors returned from get_top_precincts
-        if results and "error" in results[0]:
+        # Error path: get_top_precincts returns {"error": "..."} on failure
+        if "error" in output:
             return {
-                "errors":        [f"PrecinctsAgent: {results[0]['error']}"],
+                "errors":        [f"PrecinctsAgent: {output['error']}"],
                 "active_agents": ["precincts"],
             }
 
-        return {
+        precincts         = output["precincts"]
+        precinct_count    = output["precinct_count"]
+        data_quality_note = output["data_quality_note"]
+
+        state_update: dict = {
             "structured_data": [{
                 "agent":         "precincts",
                 # Geographic context written here so downstream agents (win_number,
@@ -332,7 +380,14 @@ TOP_N: [integer number of precincts to return, default 20]
                 "state_fips":    state_fips,
                 "district_type": district_type,
                 "district_id":   geoid,
-                "precincts":     results,
+                "precincts":     precincts,
+                "precinct_count": precinct_count,
             }],
             "active_agents": ["precincts"],
         }
+
+        if data_quality_note:
+            state_update["structured_data"][0]["data_quality_note"] = data_quality_note
+            state_update["errors"] = [f"PrecinctsAgent: {data_quality_note}"]
+
+        return state_update

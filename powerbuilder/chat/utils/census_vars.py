@@ -3,7 +3,9 @@
 # --- BASIC DEMOGRAPHICS ---
 CENSUS_DEMOGRAPHICS = {
     "total_population": "B01003_001E",
-    "total_cvap": "B29001_001E",  # Citizen Voting Age Population (18+)
+    "total_cvap": "B29001_001E",  # Citizen VAP — tract level only; not available at block group
+    "vap": "bg_vap",              # Voting Age Population 18+ from 2020 Decennial PL94-171 (P0030001);
+                                  # stored in the crosswalk CSV by crosswalk_builder.py, not fetched from ACS
     "median_age": "B01002_001E",
     "white": "B03002_003E",
     "black": "B03002_004E",

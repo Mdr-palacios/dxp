@@ -25,6 +25,7 @@ import pandas as pd
 from shapely.validation import make_valid
 
 from .district_standardizer import GeographyStandardizer
+from .data_fetcher import DataFetcher
 
 logger = logging.getLogger(__name__)
 
@@ -33,7 +34,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 TOPOJSON_PATH = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "../../precinct_shapefiles/2024precincts-with-results.topojson")
+    os.path.join(os.path.dirname(__file__), "../precinct_shapefiles/2024precincts-with-results.topojson")
 )
 
 CROSSWALK_DIR = "data/crosswalks"
@@ -90,6 +91,8 @@ def _read_topojson(path: str) -> gpd.GeoDataFrame:
     try:
         gdf = gpd.read_file(path, layer=layer_name)
         logger.debug(f"Read TopoJSON via geopandas/fiona (layer: '{layer_name}').")
+        if gdf.crs is None:
+            gdf = gdf.set_crs("EPSG:4326")
         return gdf
     except Exception as fiona_err:
         logger.debug(f"geopandas/fiona read failed ({fiona_err}), trying topojson library.")
@@ -100,6 +103,8 @@ def _read_topojson(path: str) -> gpd.GeoDataFrame:
         topo = tp.Topology(raw, prequantize=False)
         gdf = topo.to_gdf()
         logger.debug("Read TopoJSON via topojson library.")
+        if gdf.crs is None:
+            gdf = gdf.set_crs("EPSG:4326")
         return gdf
     except ImportError:
         pass
@@ -204,9 +209,13 @@ def _validate_weights(intersected: gpd.GeoDataFrame, bg_count: int) -> None:
 # Public interface
 # ---------------------------------------------------------------------------
 
-def build_crosswalk(state_fips: str, all_precincts: gpd.GeoDataFrame = None) -> bool:
+def build_crosswalk(
+    state_fips: str,
+    all_precincts: gpd.GeoDataFrame = None,
+    district_id: str = None,
+) -> bool:
     """
-    Build the block-group-to-precinct crosswalk for one state.
+    Build the block-group-to-precinct crosswalk for one state or one district.
 
     Args:
         state_fips:     Zero-padded 2-digit FIPS string, e.g. "51" for Virginia.
@@ -215,13 +224,27 @@ def build_crosswalk(state_fips: str, all_precincts: gpd.GeoDataFrame = None) -> 
                         TopoJSON will be loaded automatically. When calling from
                         build_all_states(), pass the pre-loaded GDF to avoid
                         re-reading the file for every state.
+        district_id:    Optional 4-char congressional district GEOID, e.g. "4401"
+                        for RI-01. When provided, both precincts and block groups are
+                        spatially filtered to the district boundary before the
+                        intersection is computed. Output is written to the
+                        district-specific path (see below).
+
+                        The Census API cannot filter block groups by congressional
+                        district (its hierarchy is state → county → tract → BG), so
+                        this uses TIGER/Line CD boundaries for spatial filtering instead.
+                        Core intersection/weighting logic is unchanged.
 
     Returns True on success, False on failure.
-    Output: data/crosswalks/{state_fips}_bg_to_precinct.csv
+
+    Outputs:
+      State-level:    data/crosswalks/{state_fips}_bg_to_precinct.csv
+      District-level: data/crosswalks/{state_fips}_{district_id}_bg_to_precinct.csv
     """
     os.makedirs(CROSSWALK_DIR, exist_ok=True)
     abbr = FIPS_TO_ABBR.get(state_fips, state_fips)
-    logger.info(f"\n--- Building crosswalk for {abbr} (FIPS: {state_fips}) ---")
+    label = f"{abbr} district {district_id}" if district_id else abbr
+    logger.info(f"\n--- Building crosswalk for {label} (FIPS: {state_fips}) ---")
 
     try:
         # 1. Load precincts
@@ -242,6 +265,49 @@ def build_crosswalk(state_fips: str, all_precincts: gpd.GeoDataFrame = None) -> 
         # 3. Project both to equal-area CRS for accurate area calculations
         precincts_proj = precincts.to_crs(AREA_CRS)
         bg_proj = block_groups.to_crs(AREA_CRS)
+
+        # 3a. Optional: spatially filter to a congressional district boundary.
+        # Filtering happens here, after projection, so all spatial ops use AREA_CRS.
+        # Precincts are filtered by intersection; BGs are filtered by centroid-within.
+        # This is the correct approach because the Census API hierarchy
+        # (state → county → tract → BG) does not include congressional districts.
+        if district_id is not None:
+            logger.info(f"  Applying spatial filter to district {district_id}...")
+            cd_gdf = DataFetcher.get_congressional_district_boundary(state_fips, district_id)
+            if cd_gdf is not None:
+                cd_proj    = cd_gdf.to_crs(AREA_CRS)
+                cd_union   = cd_proj.geometry.union_all()
+
+                # Filter precincts: keep those whose geometries intersect the CD
+                n_pre = len(precincts_proj)
+                precincts_proj = precincts_proj[
+                    precincts_proj.geometry.intersects(cd_union)
+                ].copy()
+                logger.info(
+                    f"  Precincts: {len(precincts_proj)} of {n_pre} "
+                    f"intersect district {district_id}."
+                )
+
+                # Filter BGs: keep those whose centroids fall within the CD
+                n_bg = len(bg_proj)
+                bg_centroids = bg_proj.geometry.centroid
+                bg_proj = bg_proj[bg_centroids.within(cd_union)].copy()
+                logger.info(
+                    f"  Block groups: {len(bg_proj)} of {n_bg} "
+                    f"have centroids within district {district_id}."
+                )
+
+                if precincts_proj.empty or bg_proj.empty:
+                    logger.error(
+                        f"  Spatial filter eliminated all precincts or BGs for {district_id}. "
+                        "Check that the district boundary and TopoJSON overlap."
+                    )
+                    return False
+            else:
+                logger.warning(
+                    f"  CD boundary unavailable for {district_id}; "
+                    "building full-state crosswalk instead."
+                )
 
         # 4. Record block group total areas before intersection
         bg_proj = bg_proj.copy()
@@ -266,6 +332,18 @@ def build_crosswalk(state_fips: str, all_precincts: gpd.GeoDataFrame = None) -> 
         # Drop zero-area slivers from floating-point edge effects
         intersected = intersected[intersected["weight"] > 1e-9].copy()
 
+        # Join 2020 Decennial Census VAP (18+) at block group level.
+        # P0030001 is available at BG resolution; ACS5 CVAP is not.
+        # Falls back to ACS5 total_population if the Decennial API is unreachable.
+        logger.info("  Fetching 2020 Decennial Census VAP by block group (P0030001)...")
+        bg_vap = DataFetcher.get_decennial_vap_by_block_group(state_fips)
+        if bg_vap:
+            intersected["bg_vap"] = intersected["bg_geoid"].map(bg_vap).fillna(0).astype(int)
+            logger.info(f"  VAP joined for {len(bg_vap)} block groups.")
+        else:
+            intersected["bg_vap"] = 0
+            logger.warning("  VAP fetch returned empty; bg_vap set to 0 for all rows.")
+
         if intersected.empty:
             logger.error(f"  No BG-precinct intersections found for {state_fips}. "
                          "Check that precinct and block group boundaries overlap.")
@@ -275,8 +353,14 @@ def build_crosswalk(state_fips: str, all_precincts: gpd.GeoDataFrame = None) -> 
         _validate_weights(intersected, bg_count=len(bg_proj))
 
         # 8. Save crosswalk CSV
-        output_path = os.path.join(CROSSWALK_DIR, f"{state_fips}_bg_to_precinct.csv")
-        result = intersected[["bg_geoid", "precinct_geoid", "weight", "official_boundary"]].copy()
+        fname = (
+            f"{state_fips}_{district_id}_bg_to_precinct.csv"
+            if district_id else
+            f"{state_fips}_bg_to_precinct.csv"
+        )
+        output_path = os.path.join(CROSSWALK_DIR, fname)
+        out_cols = ["bg_geoid", "precinct_geoid", "weight", "official_boundary", "bg_vap"]
+        result = intersected[[c for c in out_cols if c in intersected.columns]].copy()
         result["weight"] = result["weight"].round(6)
         result = result.sort_values(["bg_geoid", "weight"], ascending=[True, False])
         result.to_csv(output_path, index=False)
