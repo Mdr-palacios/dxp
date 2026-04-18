@@ -1,4 +1,5 @@
 import re
+from .election_ingestor import AT_LARGE_ALIASES
 
 class GeographyStandardizer:
     """
@@ -70,6 +71,11 @@ class GeographyStandardizer:
         state_code = GeographyStandardizer.STATE_FIPS.get(state_name.lower())
         if not state_code:
             return {"error": f"State '{state_name}' not recognized."}
+
+        # Normalise at-large aliases (ZZ, AL, "at-large", 0, …) to 1 so that
+        # single-district states always produce a valid GEOID like "0201".
+        if district_num in AT_LARGE_ALIASES or str(district_num) in AT_LARGE_ALIASES:
+            district_num = 1
 
         dist_padded = str(district_num).zfill(2) # '7' -> '07'
 

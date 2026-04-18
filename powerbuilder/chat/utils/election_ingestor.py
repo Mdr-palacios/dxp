@@ -1,10 +1,22 @@
 # powerbuilder/chat/utils/election_ingestor.py
+import logging
 import pandas as pd
 import os
 from .data_fetcher import DataFetcher
 from .census_vars import VOTER_DEMOGRAPHICS
 
+logger = logging.getLogger(__name__)
+
 CVAP_KEY = VOTER_DEMOGRAPHICS.get("total_cvap", "B29001_001E")
+
+# MEDSL source CSVs contain non-UTF-8 bytes (accented candidate names).
+# All pd.read_csv() calls that download from MEDSL_URLS must use this encoding.
+MEDSL_ENCODING = "latin-1"
+
+# At-large district aliases used by various data sources for states with a single
+# congressional district (AK, WY, VT, DE, ND, SD, MT).  Any value in this set
+# must be normalised to the integer 1 before processing.
+AT_LARGE_ALIASES = {"ZZ", "AL", "at-large", "at large", "AT-LARGE", "AT LARGE", "0", 0}
 
 class ElectionDataUtility:
     MEDSL_URLS = {
@@ -40,8 +52,16 @@ class ElectionDataUtility:
             for row in rows:
                 if "error" in row:
                     continue
-                # Census returns zero-padded district string e.g. "07"; convert to int for matching
-                dist_num = int(row.get("congressional district", 0))
+                # Census returns zero-padded strings e.g. "07", or "ZZ" for at-large districts.
+                # Normalise any AT_LARGE_ALIASES value to 1 (single at-large district).
+                raw_district = row.get("congressional district", "0")
+                if raw_district in AT_LARGE_ALIASES or str(raw_district).upper() in {str(a).upper() for a in AT_LARGE_ALIASES}:
+                    dist_num = 1  # at-large district (AK, WY, VT, DE, ND, SD, MT)
+                else:
+                    try:
+                        dist_num = int(raw_district)
+                    except (ValueError, TypeError):
+                        continue  # skip genuinely unrecognizable district values
                 lookup[dist_num] = float(row.get(CVAP_KEY, 0))
             return lookup
 
@@ -54,6 +74,10 @@ class ElectionDataUtility:
         """
         if office_type == "senate":
             return "statewide"
+        # Normalise at-large aliases to district 1 before building the GEOID.
+        # Covers MEDSL values like 0, "ZZ", "AL", "at-large" for single-district states.
+        if district_val in AT_LARGE_ALIASES or str(district_val) in AT_LARGE_ALIASES:
+            return f"{fips_str}01"
         try:
             dist_num = int(district_val)
             return f"{fips_str}{dist_num:02d}"
@@ -71,8 +95,17 @@ class ElectionDataUtility:
         if 2024 not in years:
             return pd.DataFrame()
         try:
-            df = pd.read_csv(ElectionDataUtility.MEDSL_URLS["senate_2024"], low_memory=False, encoding="latin-1")
+            df = pd.read_csv(ElectionDataUtility.MEDSL_URLS["senate_2024"], low_memory=False, encoding=MEDSL_ENCODING)
+            # General elections, total-mode rows only (mirrors sync_national_database filters)
             df = df[df["stage"].str.upper() == "GEN"]
+            df = df[df["mode"].str.upper() == "TOTAL"]
+            # FIPS filter must precede astype(int) — non-numeric values like "ZZ"
+            # (overseas military) would raise ValueError in the cast below.
+            _valid_fips = pd.to_numeric(df["state_fips"], errors="coerce").between(1, 56)
+            _dropped = (~_valid_fips).sum()
+            if _dropped:
+                logger.debug(f"FIPS filter removed {_dropped} senate_2024 rows with non-standard state_fips.")
+            df = df[_valid_fips]
             df = df[df["year"] == 2024]
             df["district"] = "statewide"
             df["state_fips"] = df["state_fips"].astype(int)
@@ -115,20 +148,49 @@ class ElectionDataUtility:
         print(f"Starting national sync for cycles: {list(years)}")
 
         try:
-            # 1. Fetch MEDSL constituency-returns (1976-2018)
-            # latin-1 encoding required: MEDSL CSVs contain non-UTF-8 bytes (e.g. accented candidate names)
-            house_df = pd.read_csv(ElectionDataUtility.MEDSL_URLS["house"], low_memory=False, encoding="latin-1")
-            senate_df = pd.read_csv(ElectionDataUtility.MEDSL_URLS["senate"], low_memory=False, encoding="latin-1")
+            # 1. Fetch MEDSL constituency-returns
+            # House: prefer the local .tab file (comma-delimited despite the .tab extension)
+            # to avoid a large remote download. Fall back to the remote URL when absent.
+            _house_local = "data/election_results/house_master_raw.tab"
+            if os.path.exists(_house_local):
+                house_df = pd.read_csv(_house_local, low_memory=False, encoding=MEDSL_ENCODING)
+            else:
+                house_df = pd.read_csv(ElectionDataUtility.MEDSL_URLS["house"], low_memory=False, encoding=MEDSL_ENCODING)
+            _senate_local = "data/election_results/senate_master_raw.csv"
+            if os.path.exists(_senate_local):
+                senate_df = pd.read_csv(_senate_local, low_memory=False, encoding=MEDSL_ENCODING)
+            else:
+                senate_df = pd.read_csv(ElectionDataUtility.MEDSL_URLS["senate"], low_memory=False, encoding=MEDSL_ENCODING)
 
-            # 2. General elections only (exclude primaries, runoffs)
-            house_df = house_df[house_df["stage"] == "gen"]
-            senate_df = senate_df[senate_df["stage"] == "gen"]
+            # 2. General elections only (exclude primaries, runoffs), total votes only
+            # (mode == "TOTAL" drops rows broken out by absentee/election-day/etc. that
+            # would double-count votes if included alongside the TOTAL row)
+            house_df = house_df[house_df["stage"] == "GEN"]
+            house_df = house_df[house_df["mode"] == "TOTAL"]
+            senate_df = senate_df[senate_df["stage"] == "GEN"]
+            senate_df = senate_df[senate_df["mode"] == "TOTAL"]
 
-            # 3. Filter for target years
+            # 3. Drop non-standard FIPS values (overseas military "ZZ", territories,
+            # etc.) that cannot be mapped to a US state and would crash the per-state
+            # loop. Valid FIPS integers are 1-56; anything outside that range or
+            # non-numeric is discarded here rather than failing silently later.
+            _valid_fips = pd.to_numeric(house_df["state_fips"], errors="coerce").between(1, 56)
+            _house_dropped = (~_valid_fips).sum()
+            if _house_dropped:
+                logger.debug(f"FIPS filter removed {_house_dropped} house rows with non-standard state_fips.")
+            house_df = house_df[_valid_fips]
+
+            _valid_fips = pd.to_numeric(senate_df["state_fips"], errors="coerce").between(1, 56)
+            _senate_dropped = (~_valid_fips).sum()
+            if _senate_dropped:
+                logger.debug(f"FIPS filter removed {_senate_dropped} senate rows with non-standard state_fips.")
+            senate_df = senate_df[_valid_fips]
+
+            # 5. Filter for target years
             house_df = house_df[house_df["year"].isin(years)]
             senate_df = senate_df[senate_df["year"].isin(years)]
 
-            # 4. Deduplicate to one row per race (source has one row per candidate;
+            # 6. Deduplicate to one row per race (source has one row per candidate;
             #    totalvotes is constant across all candidates in a race so we take first)
             house_races = (
                 house_df
@@ -188,11 +250,12 @@ class ElectionDataUtility:
                 )
                 state_senate["cvap"] = senate_cvap.get("statewide", 0)
 
-                # Compute turnout_pct (None if CVAP is zero or missing)
+                # Compute turnout_pct (NaN where CVAP is zero or missing)
                 for df_part in [state_house, state_senate]:
-                    df_part["turnout_pct"] = df_part.apply(
-                        lambda r: round(r["totalvotes"] / r["cvap"], 4) if r["cvap"] > 0 else None,
-                        axis=1
+                    df_part["turnout_pct"] = (
+                        (df_part["totalvotes"] / df_part["cvap"])
+                        .where(df_part["cvap"] > 0)
+                        .round(4)
                     )
 
                 master_df = pd.concat([state_house, state_senate], ignore_index=True)
@@ -202,5 +265,8 @@ class ElectionDataUtility:
             return True
 
         except Exception as e:
-            print(f"Sync failed: {e}")
+            import traceback
+            print(f'Sync failed: {e}')
+            print(f'Current fips when crashed: {fips if "fips" in dir() else "before loop"}')
+            traceback.print_exc()
             return False

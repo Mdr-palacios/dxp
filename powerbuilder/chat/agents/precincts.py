@@ -134,13 +134,27 @@ class PrecinctsAgent:
         Returns the set of 12-character block group GEOIDs that fall within
         the target district, using the Census API nested geography predicate.
 
+        Congressional districts are intentionally excluded from this Census API
+        call. The ACS5 API only resolves block groups within the standard
+        geographic hierarchy (state → county → tract → block group); congressional
+        districts are not part of that hierarchy, so passing
+        `in=state:XX congressional district:XX` with `for=block group:*` returns
+        a 400 error. For congressional districts, district filtering happens
+        spatially via the crosswalk file (built by crosswalk_builder.py) — either
+        the district-specific crosswalk already scopes to the correct BGs, or the
+        full-state crosswalk is intersected with precinct boundaries that lie within
+        the district. This function returns an empty set for congressional so the
+        caller falls through to that crosswalk-based path.
+
         Returns an empty set on failure so the caller can proceed without
         district filtering rather than crashing.
         """
+        # The Census API does not support congressional district as a parent geography
+        # for block groups. Return early and let the crosswalk handle district scoping.
         if district_type == "congressional":
-            dist_num = district_id[len(state_fips):]          # "5107"[2:] = "07"
-            in_pred = f"state:{state_fips} congressional district:{dist_num}"
-        elif district_type == "state_senate":
+            return set()
+
+        if district_type == "state_senate":
             dist_num = district_id[len(state_fips) + 1:]      # strip "S" prefix
             in_pred = f"state:{state_fips} state legislative district (upper chamber):{dist_num}"
         elif district_type == "state_house":
@@ -332,17 +346,24 @@ class PrecinctsAgent:
         bg_metrics  = [m for m in metrics if m not in TRACT_ONLY_METRICS]
         edu_metrics = [m for m in metrics if m in TRACT_ONLY_METRICS]
 
-        # Expand BG multi-variable metrics (e.g. "youth_vap") into their component
-        # friendly names so every required Census code is fetched in one API call.
-        fetch_metrics = list(bg_metrics)
-        for mv_name, components in MULTI_VAR_METRICS.items():
-            if mv_name in bg_metrics:
-                for comp in components:
+        # Expand BG multi-variable metrics into their leaf component friendly names.
+        # Composite names (e.g. "youth_vap") must never appear in the Census API
+        # request — the API only accepts real variable codes like B01001_007E.
+        # Composite names are recovered in step 3 after the fetch, when component
+        # columns are summed into a synthetic column and metric_to_code is updated.
+        fetch_metrics: list = []
+        for m in bg_metrics:
+            if m in MULTI_VAR_METRICS:
+                for comp in MULTI_VAR_METRICS[m]:
                     if comp not in fetch_metrics:
                         fetch_metrics.append(comp)
+            elif m not in fetch_metrics:
+                fetch_metrics.append(m)
 
-        # Translate friendly names to Census API codes for column lookup
-        # e.g. "total_cvap" → "B29001_001E", raw codes pass through unchanged
+        # Translate leaf friendly names to Census API codes for column lookup.
+        # e.g. "hispanic_pop" → "B03003_003E", raw codes pass through unchanged.
+        # Composite metric names are absent from fetch_metrics so they cannot
+        # appear here and cannot leak into the Census API URL.
         metric_to_code = {m: VOTER_DEMOGRAPHICS.get(m, m) for m in fetch_metrics}
 
         # Some metrics are crosswalk-native: their values come from columns already

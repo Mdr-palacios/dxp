@@ -38,3 +38,4 @@ chat/precinct_shapefiles/*.topojson
 # Data directory (except cook PVI seed file)
 data/
 !data/cook_pvi_2025.json
+data/election_results/

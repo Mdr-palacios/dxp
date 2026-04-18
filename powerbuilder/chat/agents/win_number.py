@@ -9,6 +9,7 @@ from langchain_openai import ChatOpenAI
 from ..utils.data_fetcher import DataFetcher
 from ..utils.district_standardizer import GeographyStandardizer
 from ..utils.census_vars import VOTER_DEMOGRAPHICS
+from ..utils.election_ingestor import AT_LARGE_ALIASES
 from .state import AgentState
 
 CVAP_KEY = VOTER_DEMOGRAPHICS.get("total_cvap", "B29001_001E")
@@ -95,6 +96,18 @@ class WinNumberAgent:
                  if "error" not in d and d.get(census_geo_key) == dist_code),
                 None
             )
+            # At-large states (AK, WY, VT, DE, ND, SD, MT): the Census API returns
+            # "ZZ" or another AT_LARGE_ALIASES value instead of a numeric district
+            # code. dist_code will be "01" after normalisation, so try alias matching
+            # as a fallback when the direct lookup fails for district 1.
+            if matched is None and dist_code.lstrip("0") in ("", "1"):
+                _al_upper = {str(a).upper() for a in AT_LARGE_ALIASES}
+                matched = next(
+                    (d for d in census_data
+                     if "error" not in d
+                     and str(d.get(census_geo_key, "")).upper() in _al_upper),
+                    None,
+                )
             if matched is None:
                 return {
                     "error": (
@@ -265,13 +278,16 @@ VICTORY_MARGIN: [decimal win threshold e.g. 0.52, default 0.52]
                 district_id = "statewide"
             else:
                 dist_num_raw = params.get("DISTRICT_NUM", "0")
-                try:
-                    dist_num = int(dist_num_raw)
-                except (ValueError, TypeError):
-                    return {
-                        "errors":        [f"WinNumberAgent: Could not parse district number from '{dist_num_raw}'."],
-                        "active_agents": ["win_number"],
-                    }
+                if dist_num_raw in AT_LARGE_ALIASES or str(dist_num_raw) in AT_LARGE_ALIASES:
+                    dist_num = 1
+                else:
+                    try:
+                        dist_num = int(dist_num_raw)
+                    except (ValueError, TypeError):
+                        return {
+                            "errors":        [f"WinNumberAgent: Could not parse district number from '{dist_num_raw}'."],
+                            "active_agents": ["win_number"],
+                        }
                 geoid = GeographyStandardizer.convert_to_geoid(state_name, dist_num, district_type)
                 if isinstance(geoid, dict):
                     return {

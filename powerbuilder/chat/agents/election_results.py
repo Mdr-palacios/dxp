@@ -40,7 +40,7 @@ from .state import AgentState
 from .win_number import get_climate_years
 from ..utils.cook_client import CookPoliticalClient
 from ..utils.district_standardizer import GeographyStandardizer
-from ..utils.election_ingestor import ElectionDataUtility
+from ..utils.election_ingestor import AT_LARGE_ALIASES, ElectionDataUtility
 
 logger = logging.getLogger(__name__)
 
@@ -139,12 +139,15 @@ def _extract_party_margins(
     if df.empty:
         return None
 
-    # For congressional: filter by district number extracted from GEOID
+    # For congressional: filter by district number extracted from GEOID.
+    # MEDSL constituency-returns stores at-large districts as 0 (integer); normalise
+    # to 1 before filtering so that single-district states match our convention.
     if office_type == "congressional":
         try:
             dist_num = int(district_id[len(state_fips):])
         except (ValueError, IndexError):
             return None
+        df["district"] = df["district"].replace({0: 1})
         df = df[df["district"] == dist_num]
     # Senate: all rows in this state are statewide
 
@@ -312,11 +315,15 @@ TARGET_YEAR: [4-digit election year, default 2026]
     if district_type == "senate":
         district_id = "statewide"
     else:
-        try:
-            dist_num = int(params.get("DISTRICT_NUM", 0))
-        except (ValueError, TypeError):
-            logger.error("ElectionAnalyst: could not parse district number from LLM output")
-            return None
+        dist_num_raw = params.get("DISTRICT_NUM", "0")
+        if dist_num_raw in AT_LARGE_ALIASES or str(dist_num_raw) in AT_LARGE_ALIASES:
+            dist_num = 1
+        else:
+            try:
+                dist_num = int(dist_num_raw)
+            except (ValueError, TypeError):
+                logger.error("ElectionAnalyst: could not parse district number from LLM output")
+                return None
         geoid = GeographyStandardizer.convert_to_geoid(state_name, dist_num, district_type)
         if isinstance(geoid, dict):
             logger.error(f"ElectionAnalyst: GEOID conversion failed — {geoid.get('error')}")
