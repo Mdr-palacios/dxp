@@ -13,6 +13,7 @@ from .messaging import messaging_node
 from .finance_agent import finance_node
 from .export import export_node
 from .election_results import ElectionAnalystAgent
+from .voterfile_agent import VoterFileAgent
 
 
 # Define LLM and temperature for workflow
@@ -58,6 +59,17 @@ def _detect_demographic_intent(query: str) -> str:
         return "renter"
     return "default"
 
+# Keyword-based fast path for voter file queries — avoids an LLM call for clear cases.
+_VOTER_FILE_KEYWORDS = (
+    "voter file", "voterfile", "voter list", "my list", "upload list",
+    "target list", "van export", "voter data", "contact list",
+)
+
+def _is_voter_file_query(query: str) -> bool:
+    q = query.lower()
+    return any(kw in q for kw in _VOTER_FILE_KEYWORDS)
+
+
 # Check if a file needs to be ingested first
 def triage_router(state: AgentState):
     if state.get("uploaded_file_path"):
@@ -66,6 +78,15 @@ def triage_router(state: AgentState):
 
 # Intent Router / Classification
 def intent_router_node(state: AgentState):
+    # Fast path: skip LLM for unambiguous voter file queries
+    active_agents  = state.get("active_agents", [])
+    if _is_voter_file_query(state["query"]) and "voter_file" not in active_agents:
+        return {
+            "router_decision":    "voter_file",
+            "output_format":      "markdown",
+            "demographic_intent": "default",
+        }
+
     llm = get_model()
 
     active_agents  = state.get("active_agents", [])
@@ -90,6 +111,7 @@ def intent_router_node(state: AgentState):
     - ELECTION_RESULTS: Analyzes past election results, vote shares, and historical trends.
     - MESSAGING: Generates canvassing scripts, text messages, mail narratives, and digital ad copy grounded in research.
     - COST_CALCULATOR: Estimates cost of campaign tactics (canvassing, phone banking, digital ads, mailers).
+    - VOTER_FILE: Analyzes an uploaded voter file (CSV or Excel). Segments voters by age cohort, gender, party, and turnout history, then matches messaging research from the research library to each segment.
     - FINISH: All needed agents have run — proceed to final synthesis.
 
     DECISION RULES:
@@ -104,7 +126,9 @@ def intent_router_node(state: AgentState):
        Step 7 → FINISH
        FORMAT: MARKDOWN
 
-    2. SINGLE-TOPIC REQUEST: If the user asks a focused question, return only the single most relevant specialist. If you already have enough information to answer, return FINISH.
+    2. VOTER FILE REQUEST: If the user uploads a voter file or asks to analyze, segment, or pull messaging for a voter list, return VOTER_FILE immediately. Do not run any other agent first.
+
+    3. SINGLE-TOPIC REQUEST: If the user asks a focused question, return only the single most relevant specialist. If you already have enough information to answer, return FINISH.
 
     IMPORTANT: Never return an agent that already appears in "Agents already completed."
 
@@ -117,6 +141,7 @@ def intent_router_node(state: AgentState):
     specialists = [
         "ELECTION_RESULTS",
         "COST_CALCULATOR",
+        "VOTER_FILE",
         "WIN_NUMBER",
         "RESEARCHER",
         "PRECINCTS",
@@ -148,6 +173,7 @@ workflow.add_node("win_number", WinNumberAgent.run)
 workflow.add_node("messaging", messaging_node)
 workflow.add_node("cost_calculator", finance_node)
 workflow.add_node("election_results", ElectionAnalystAgent.run)
+workflow.add_node("voter_file", VoterFileAgent.run)
 
 workflow.add_node("synthesizer", export_node)
 
@@ -177,6 +203,7 @@ workflow.add_conditional_edges(
         "messaging":        "messaging",
         "cost_calculator":  "cost_calculator",
         "election_results": "election_results",
+        "voter_file":       "voter_file",
         "finish":           "synthesizer",
     }
 )
@@ -189,6 +216,7 @@ workflow.add_edge("win_number",    "intent_router")
 workflow.add_edge("messaging",        "intent_router")
 workflow.add_edge("cost_calculator",  "intent_router")
 workflow.add_edge("election_results", "intent_router")
+workflow.add_edge("voter_file",       "intent_router")
 
 workflow.add_edge("synthesizer", END)
 

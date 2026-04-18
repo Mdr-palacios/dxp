@@ -26,40 +26,54 @@ _VALID_DOC_TYPES = {
 # Shared metadata extractor — importable by bulk_upload.py
 # ---------------------------------------------------------------------------
 
-def extract_doc_metadata(text: str, llm) -> dict:
+def extract_doc_metadata(text: str, llm, filename: str = "") -> dict:
     """
-    Makes two short LLM calls against the first 3000 characters of document
-    text to extract a publication date and a document type classification.
+    Extracts a publication date and document type classification.
+
+    Date extraction order:
+      1. Regex scan of the filename for a 4-digit year (1990–2030) — free, instant.
+         Sets date to "YYYY" and date_approximate: True. Skips the LLM date call.
+      2. LLM call against the first 3000 chars of text — only when the filename
+         yields no year.
 
     Returns a metadata dict ready to merge into a LangChain Document's metadata:
 
-        date           : "YYYY-MM-DD" string if found, key omitted if unknown
-        date_approximate: True when no date was found (omitted otherwise)
-        date_ingested  : today's date in YYYY-MM-DD (always present)
-        document_type  : one of the _VALID_DOC_TYPES strings
+        date            : "YYYY-MM-DD" or "YYYY" string if found, omitted if unknown
+        date_approximate: True when only a year (not a full date) was found,
+                          or when no date was found at all (omitted otherwise)
+        date_ingested   : today's date in YYYY-MM-DD (always present)
+        document_type   : one of the _VALID_DOC_TYPES strings
     """
     sample = text[:3000].strip()
     today  = _today.today().isoformat()
-
-    # -- Date extraction ------------------------------------------------------
-    date_prompt = (
-        "What is the publication date of this document? "
-        "Look for dates in headers, footers, or the first paragraph. "
-        "Return only a date in YYYY-MM-DD format, or return the word unknown "
-        "if no date is found.\n\n"
-        f"{sample}"
-    )
-    try:
-        date_raw = llm.invoke(date_prompt).content.strip()
-    except Exception:
-        date_raw = "unknown"
-
-    date_match = re.search(r"\d{4}-\d{2}-\d{2}", date_raw)
     metadata: dict = {"date_ingested": today}
-    if date_match:
-        metadata["date"] = date_match.group(0)
-    else:
+
+    # -- Date extraction: filename year scan first ----------------------------
+    # Check the filename for a 4-digit year before making any LLM call.
+    # Many documents embed the year in the filename (e.g. "polling_memo_2023.pdf").
+    filename_year_match = re.search(r"\b(19[9]\d|20[0-2]\d|2030)\b", filename)
+    if filename_year_match:
+        metadata["date"]             = filename_year_match.group(0)  # "YYYY"
         metadata["date_approximate"] = True
+    else:
+        # -- Date extraction: LLM fallback ------------------------------------
+        date_prompt = (
+            "What is the publication date of this document? "
+            "Look for dates in headers, footers, or the first paragraph. "
+            "Return only a date in YYYY-MM-DD format, or return the word unknown "
+            "if no date is found.\n\n"
+            f"{sample}"
+        )
+        try:
+            date_raw = llm.invoke(date_prompt).content.strip()
+        except Exception:
+            date_raw = "unknown"
+
+        date_match = re.search(r"\d{4}-\d{2}-\d{2}", date_raw)
+        if date_match:
+            metadata["date"] = date_match.group(0)
+        else:
+            metadata["date_approximate"] = True
 
     # -- Document type classification -----------------------------------------
     type_prompt = (
@@ -119,7 +133,7 @@ def ingestor_node(state: AgentState):
         # Using gpt-4o-mini keeps this fast and cheap; the prompts are simple.
         llm          = ChatOpenAI(model="gpt-4o-mini", temperature=0)
         first_text   = llama_docs[0].text if llama_docs else ""
-        doc_metadata = extract_doc_metadata(first_text, llm)
+        doc_metadata = extract_doc_metadata(first_text, llm, filename=filename)
 
         # translate to LangChain Documents
         langchain_docs = []
@@ -158,14 +172,13 @@ def ingestor_node(state: AgentState):
             "active_agents": ["ingestor"],
         }
 
-    # for structured data (.csv files)
-    elif file_ext == ".csv":
-        save_dir = f"media/voter_files/{org_namespace}/"
-        os.makedirs(save_dir, exist_ok=True)
-
+    # for structured voter files (.csv or .xlsx) — pass through to VoterFileAgent.
+    # The file path remains in state so VoterFileAgent can read it directly.
+    # Raw voter data is not persisted here; VoterFileAgent discards it after analysis.
+    elif file_ext in (".csv", ".xlsx", ".xls"):
         return {
             "research_results": [
-                f"Voter file {filename} has been saved to the workspace data folder."
+                f"Voter file {filename} received. Routing to voter file analyst."
             ],
             "active_agents": ["ingestor"],
         }
