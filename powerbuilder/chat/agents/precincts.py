@@ -10,12 +10,105 @@ import pandas as pd
 import requests
 from langchain_openai import ChatOpenAI
 
-from ..utils.census_vars import VOTER_DEMOGRAPHICS
+from ..utils.census_vars import VOTER_DEMOGRAPHICS, MULTI_VAR_METRICS, TRACT_ONLY_METRICS
 from ..utils.data_fetcher import DataFetcher
 from ..utils.district_standardizer import GeographyStandardizer
 from .state import AgentState
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Demographic targeting configuration
+# ---------------------------------------------------------------------------
+
+# Maps AgentState.demographic_intent → primary metrics passed to get_top_precincts().
+_DEMOGRAPHIC_METRICS: dict[str, list[str]] = {
+    "youth":         ["youth_vap", "college_enrolled"],
+    "hispanic":      ["hispanic_pop"],
+    "black":         ["black_pop"],
+    "aapi":          ["aapi"],
+    "native":        ["native_pop"],
+    "senior":        ["senior_vap"],
+    "educated":      ["graduate_educated"],
+    "working_class": ["no_hs_diploma", "some_college"],
+    "low_income":    ["poverty_pop"],
+    "high_income":   ["median_income"],
+    "immigrant":     ["foreign_born_pop"],
+    "veteran":       ["veteran_pop"],
+    "suburban":      ["owner_pop"],
+    "renter":        ["renter_pop"],
+    "default":       ["total_vap"],
+}
+
+# Human-readable explanation written into structured_data["demographic_profile"].
+_DEMOGRAPHIC_PROFILES: dict[str, str] = {
+    "youth": (
+        "Targeting precincts with high concentrations of voters aged 18-29 and college "
+        "enrollment. youth_vap sums B01001_007-011E and B01001_031-035E (18-29 male and "
+        "female); college_enrolled uses B14001_005E."
+    ),
+    "hispanic": (
+        "Targeting precincts with high Hispanic/Latino population concentrations "
+        "(B03003_003E). Note: total population, not CVAP — citizenship rates vary."
+    ),
+    "black": (
+        "Targeting precincts with high Black/African American population concentrations "
+        "(B02001_003E). Note: total population, not CVAP."
+    ),
+    "aapi": (
+        "Targeting precincts with high Asian American and Pacific Islander population "
+        "concentrations. Combines Asian alone (B02001_005E) and Native Hawaiian/Pacific "
+        "Islander alone (B02001_006E)."
+    ),
+    "native": (
+        "Targeting precincts with high American Indian and Alaska Native population "
+        "concentrations (B02001_004E). Note: total population, not CVAP."
+    ),
+    "senior": (
+        "Targeting precincts with high concentrations of voters aged 65 and older. "
+        "senior_vap sums B01001_020-025E (male 65+) and B01001_044-049E (female 65+)."
+    ),
+    "educated": (
+        "Targeting precincts with high concentrations of college and graduate degree holders. "
+        "graduate_educated combines bachelor's (B15003_022E) with master's, professional, "
+        "and doctoral degrees (B15003_023-025E). Uses tract-level data — less granular than "
+        "block-group targeting."
+    ),
+    "working_class": (
+        "Targeting precincts with high concentrations of working-class voters without "
+        "four-year degrees. no_hs_diploma sums B15003_002-016E; some_college sums "
+        "B15003_019-021E. Both use tract-level data — less granular than block-group targeting."
+    ),
+    "low_income": (
+        "Targeting precincts with high concentrations of low-income households "
+        "(B17001_002E — households below the federal poverty line)."
+    ),
+    "high_income": (
+        "Targeting precincts with high median household income (B19013_001E) — "
+        "for donor prospecting and persuasion targeting in affluent areas."
+    ),
+    "immigrant": (
+        "Targeting precincts with high concentrations of foreign-born and naturalized "
+        "citizen populations (B05002_013E — foreign-born). Note: not all foreign-born "
+        "residents are eligible voters."
+    ),
+    "veteran": (
+        "Targeting precincts with high concentrations of veteran and military-connected "
+        "voters (B21001_002E — civilian veterans 18+)."
+    ),
+    "suburban": (
+        "Targeting precincts with high homeownership rates (B25003_002E — owner-occupied "
+        "housing units) as a proxy for suburban and exurban voter populations."
+    ),
+    "renter": (
+        "Targeting precincts with high renter-occupied housing (B25003_003E) — proxy for "
+        "urban and transient populations, including young voters and recent movers."
+    ),
+    "default": (
+        "No demographic targeting specified. Ranking precincts by total voting-age population "
+        "(VAP from 2020 Decennial PL94-171) — the broadest measure of the resident voter universe."
+    ),
+}
 
 
 class PrecinctsAgent:
@@ -102,6 +195,101 @@ class PrecinctsAgent:
         parts = precinct_geoid.split(" ", 1)
         return parts[1].strip() if len(parts) > 1 else precinct_geoid
 
+    @staticmethod
+    def _compute_tract_education_weights(
+        state_fips: str,
+        edu_metrics: list,
+        crosswalk: "pd.DataFrame",
+    ) -> "pd.DataFrame | None":
+        """
+        Fetches B15003 education variables at Census tract level (ACS5 block-group
+        limitation) and derives tract→precinct weights by summing the existing
+        bg→precinct crosswalk weights up to the tract level.
+
+        Returns a DataFrame indexed by precinct_geoid with weighted_<metric> columns,
+        or None on failure. Core dasymetric logic is not used here — this is a
+        simplified areal-weight approach applied at tract granularity.
+        """
+        # Expand multi-var education metrics into component friendly names
+        component_names: list = []
+        for m in edu_metrics:
+            if m in MULTI_VAR_METRICS:
+                for c in MULTI_VAR_METRICS[m]:
+                    if c not in component_names:
+                        component_names.append(c)
+            elif m not in component_names:
+                component_names.append(m)
+
+        # Resolve component friendly names to Census codes (deduplicated)
+        comp_to_code = {c: VOTER_DEMOGRAPHICS.get(c, c) for c in component_names}
+        census_codes = list(dict.fromkeys(comp_to_code.values()))
+
+        if not census_codes:
+            return None
+
+        try:
+            response = requests.get(
+                "https://api.census.gov/data/2022/acs/acs5",
+                params={
+                    "get": f"NAME,{','.join(census_codes)}",
+                    "for": "tract:*",
+                    "in":  f"state:{state_fips}",
+                    "key": os.getenv("CENSUS_API_KEY"),
+                },
+                timeout=45,
+            )
+            response.raise_for_status()
+            data    = response.json()
+            headers = data[0]
+            tract_df = pd.DataFrame(data[1:], columns=headers)
+            tract_df["tract_geoid"] = (
+                tract_df["state"].str.zfill(2)
+                + tract_df["county"].str.zfill(3)
+                + tract_df["tract"].str.zfill(6)
+            )
+            for code in census_codes:
+                if code in tract_df.columns:
+                    tract_df[code] = pd.to_numeric(tract_df[code], errors="coerce").fillna(0)
+        except Exception as e:
+            logger.warning(f"  Tract-level education data fetch failed: {e}")
+            return None
+
+        # Build synthetic columns for multi-var education metrics in tract_df
+        for m in edu_metrics:
+            if m in MULTI_VAR_METRICS:
+                comp_codes = [VOTER_DEMOGRAPHICS.get(c, c) for c in MULTI_VAR_METRICS[m]]
+                avail      = [c for c in comp_codes if c in tract_df.columns]
+                if avail:
+                    tract_df[m] = tract_df[avail].sum(axis=1)
+            elif m in VOTER_DEMOGRAPHICS and VOTER_DEMOGRAPHICS[m] in tract_df.columns:
+                tract_df[m] = tract_df[VOTER_DEMOGRAPHICS[m]]
+
+        # Aggregate crosswalk from BG→precinct to tract→precinct by summing weights
+        cw = crosswalk.copy()
+        cw["tract_geoid"] = cw["bg_geoid"].str[:11]
+        tract_weights = (
+            cw.groupby(["tract_geoid", "precinct_geoid"])["weight"]
+            .sum()
+            .reset_index()
+            .rename(columns={"weight": "tract_weight"})
+        )
+
+        edu_cols = [m for m in edu_metrics if m in tract_df.columns]
+        if not edu_cols:
+            logger.warning("  No education columns available in tract data after expansion.")
+            return None
+
+        merged = tract_weights.merge(
+            tract_df[["tract_geoid"] + edu_cols],
+            on="tract_geoid",
+            how="left",
+        )
+        for m in edu_cols:
+            merged[f"weighted_{m}"] = merged[m].fillna(0) * merged["tract_weight"]
+
+        weighted_cols = [f"weighted_{m}" for m in edu_cols]
+        return merged.groupby("precinct_geoid")[weighted_cols].sum()
+
     # ------------------------------------------------------------------
     # Core method
     # ------------------------------------------------------------------
@@ -136,18 +324,33 @@ class PrecinctsAgent:
             }
         """
         if metrics is None:
-            metrics = ["total_cvap"]
+            metrics = ["total_vap"]
+
+        # Split into block-group-available metrics and tract-only education metrics.
+        # B15003 (educational attainment) is not available at block group resolution
+        # in ACS5; those metrics are handled by a separate tract-level path below.
+        bg_metrics  = [m for m in metrics if m not in TRACT_ONLY_METRICS]
+        edu_metrics = [m for m in metrics if m in TRACT_ONLY_METRICS]
+
+        # Expand BG multi-variable metrics (e.g. "youth_vap") into their component
+        # friendly names so every required Census code is fetched in one API call.
+        fetch_metrics = list(bg_metrics)
+        for mv_name, components in MULTI_VAR_METRICS.items():
+            if mv_name in bg_metrics:
+                for comp in components:
+                    if comp not in fetch_metrics:
+                        fetch_metrics.append(comp)
 
         # Translate friendly names to Census API codes for column lookup
         # e.g. "total_cvap" → "B29001_001E", raw codes pass through unchanged
-        metric_to_code = {m: VOTER_DEMOGRAPHICS.get(m, m) for m in metrics}
+        metric_to_code = {m: VOTER_DEMOGRAPHICS.get(m, m) for m in fetch_metrics}
 
         # Some metrics are crosswalk-native: their values come from columns already
         # present in the crosswalk CSV (built by crosswalk_builder.py) rather than
         # fetched from the Census ACS API. "vap" → "bg_vap" is the primary example.
         # Sending these codes to the Census API would return a 400 error.
         CROSSWALK_NATIVE_CODES = {"bg_vap"}
-        acs_metrics = [m for m in metrics if metric_to_code.get(m) not in CROSSWALK_NATIVE_CODES]
+        acs_metrics = [m for m in fetch_metrics if metric_to_code.get(m) not in CROSSWALK_NATIVE_CODES]
         # Always fetch at least one ACS variable so we have the BG geography columns
         if not acs_metrics:
             acs_metrics = ["total_population"]
@@ -182,7 +385,23 @@ class PrecinctsAgent:
         else:
             logger.warning("District filter unavailable; using all state block groups.")
 
-        # 3. Load the crosswalk (built by crosswalk_builder.py).
+        # 3. Build synthetic columns for BG-level multi-var metrics.
+        # Sum component Census code columns into a single column (e.g. "youth_vap")
+        # so the dasymetric weighting step treats it like any other ACS variable.
+        # Education multi-var metrics are excluded here — they use the tract path below.
+        for mv_name, components in MULTI_VAR_METRICS.items():
+            if mv_name in bg_metrics:
+                comp_codes = [VOTER_DEMOGRAPHICS.get(c, c) for c in components]
+                available  = [c for c in comp_codes if c in bg_df.columns]
+                if available:
+                    bg_df[mv_name] = (
+                        bg_df[available].apply(pd.to_numeric, errors="coerce").fillna(0).sum(axis=1)
+                    )
+                    metric_to_code[mv_name] = mv_name  # point weighting step at the synthetic column
+                else:
+                    logger.warning(f"No component columns found for multi-var metric '{mv_name}'; skipping.")
+
+        # 4. Load the crosswalk (built by crosswalk_builder.py).
         # Try district-specific crosswalk first (built with district_id arg); these
         # contain only BGs and precincts within the target district and give correct
         # results without relying on the Census API's unsupported BG-by-CD geography.
@@ -207,7 +426,7 @@ class PrecinctsAgent:
             crosswalk["official_boundary"].astype(str).str.lower() == "true"
         )
 
-        # 4. Merge block group Census data with crosswalk
+        # 5. Merge block group Census data with crosswalk
         # Core dasymetric logic — do not change
         merged = bg_df.merge(crosswalk, on="bg_geoid")
 
@@ -215,7 +434,7 @@ class PrecinctsAgent:
             return {"error": f"Crosswalk merge produced no rows for district {district_id}. "
                              "Verify that the crosswalk was built for this state."}
 
-        # 5. Apply dasymetric weights per metric and reaggregate by precinct
+        # 6. Apply dasymetric weights per metric and reaggregate by precinct
         # weighted_value = block_group_value * (intersection_area / bg_total_area)
         # Do not change this logic
         for friendly_name, census_code in metric_to_code.items():
@@ -227,10 +446,18 @@ class PrecinctsAgent:
             else:
                 logger.warning(f"Column '{census_code}' not found in Census data; skipping metric '{friendly_name}'.")
 
-        weighted_cols = [f"weighted_{m}" for m in metrics if f"weighted_{m}" in merged.columns]
+        # Use bg_metrics (not full metrics) — edu metric weighted cols won't be in merged
+        weighted_cols = [f"weighted_{m}" for m in bg_metrics if f"weighted_{m}" in merged.columns]
 
-        # Aggregate weighted values by precinct
-        precinct_totals = merged.groupby("precinct_geoid")[weighted_cols].sum()
+        # Aggregate weighted values by precinct.
+        # When only education metrics were requested, bg_metrics is empty so we scaffold
+        # an empty precinct index from the crosswalk to join education results onto.
+        if weighted_cols:
+            precinct_totals = merged.groupby("precinct_geoid")[weighted_cols].sum()
+        else:
+            precinct_totals = (
+                merged[["precinct_geoid"]].drop_duplicates().set_index("precinct_geoid")
+            )
 
         # Determine boundary quality per precinct:
         # approximate_boundary = True if ANY contributing BG has official_boundary=False
@@ -243,7 +470,28 @@ class PrecinctsAgent:
         precinct_totals["approximate_boundary"] = ~precinct_totals["all_official"].fillna(False)
         precinct_totals = precinct_totals.drop(columns=["all_official"])
 
-        # 6. Rank by first metric and take top N
+        # 6b. Tract-level education metrics (B15003 — not available at block group in ACS5).
+        # Fetches tract data, derives tract→precinct weights from the crosswalk, and joins
+        # the resulting weighted columns into precinct_totals. Core dasymetric logic unchanged.
+        if edu_metrics:
+            logger.warning(
+                "  Education metrics (B15003) are available at Census tract level only in ACS5. "
+                "Applying simplified tract→precinct areal weighting — results are less granular "
+                "than block-group targeting."
+            )
+            edu_data = PrecinctsAgent._compute_tract_education_weights(
+                state_fips, edu_metrics, crosswalk
+            )
+            if edu_data is not None:
+                precinct_totals = precinct_totals.join(edu_data, how="left")
+                for m in edu_metrics:
+                    col = f"weighted_{m}"
+                    if col in precinct_totals.columns:
+                        precinct_totals[col] = precinct_totals[col].fillna(0)
+            else:
+                logger.warning("  Tract-level education weighting failed; education metrics will be absent from output.")
+
+        # 7. Rank by first metric and take top N
         primary_col = f"weighted_{metrics[0]}"
         if primary_col in precinct_totals.columns:
             precinct_totals = precinct_totals.sort_values(primary_col, ascending=False)
@@ -254,7 +502,7 @@ class PrecinctsAgent:
 
         top_targets = precinct_totals.head(top_n).reset_index()
 
-        # 7. Build standardised output schema
+        # 8. Build standardised output schema
         results = []
         for _, row in top_targets.iterrows():
             record = {
@@ -268,7 +516,7 @@ class PrecinctsAgent:
             record["approximate_boundary"] = bool(row.get("approximate_boundary", False))
             results.append(record)
 
-        # 8. Data quality check: fewer than 100 precincts suggests ward/municipality-level
+        # 9. Data quality check: fewer than 100 precincts suggests ward/municipality-level
         # granularity rather than individual polling-precinct granularity.
         data_quality_note = None
         if total_precinct_count < 100:
@@ -340,7 +588,13 @@ TOP_N: [integer number of precincts to return, default 20]
             }
 
         district_type = params.get("DISTRICT_TYPE", "congressional").lower()
-        metrics = [m.strip() for m in params.get("METRICS", "total_cvap").split(",") if m.strip()]
+
+        # Demographic intent is set by intent_router_node in manager.py via a keyword
+        # scan of the query — no extra LLM call required. It overrides whatever METRICS
+        # the LLM extracted, ensuring the targeting metric always matches the user's ask.
+        demographic_intent   = (state.get("demographic_intent") or "default").lower()
+        metrics              = _DEMOGRAPHIC_METRICS.get(demographic_intent, _DEMOGRAPHIC_METRICS["default"])
+        demographic_profile  = _DEMOGRAPHIC_PROFILES.get(demographic_intent, _DEMOGRAPHIC_PROFILES["default"])
 
         try:
             dist_num = int(params.get("DISTRICT_NUM", 0))
@@ -382,6 +636,11 @@ TOP_N: [integer number of precincts to return, default 20]
                 "district_id":   geoid,
                 "precincts":     precincts,
                 "precinct_count": precinct_count,
+                "demographic_profile": {
+                    "intent":      demographic_intent,
+                    "metrics":     metrics,
+                    "explanation": demographic_profile,
+                },
             }],
             "active_agents": ["precincts"],
         }

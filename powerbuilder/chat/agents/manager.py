@@ -1,5 +1,3 @@
-import os
-
 from dotenv import load_dotenv
 load_dotenv()
 
@@ -20,6 +18,45 @@ from .election_results import ElectionAnalystAgent
 # Define LLM and temperature for workflow
 def get_model():
     return get_completion_client(temperature=0.3)
+
+
+def _detect_demographic_intent(query: str) -> str:
+    """
+    Keyword scan that maps a user query to a demographic intent label.
+    Used by intent_router_node to set AgentState.demographic_intent so
+    PrecinctsAgent can select the correct targeting metric without an extra
+    LLM call. Order matters: more specific checks precede broader ones.
+    """
+    q = query.lower()
+    if any(kw in q for kw in ("young voter", "youth", "student", "college", "millennial", "gen z", "young people")):
+        return "youth"
+    if any(kw in q for kw in ("hispanic", "latino", "latina", "latinx", "spanish-speaking", "spanish speaking")):
+        return "hispanic"
+    if any(kw in q for kw in ("black voter", "black voters", "african american", "hbcu")):
+        return "black"
+    if any(kw in q for kw in ("asian", "aapi", "asian american", "pacific islander", "korean", "chinese", "vietnamese", "filipino", "japanese", "south asian", "indian american")):
+        return "aapi"
+    if any(kw in q for kw in ("native american", "indigenous", "tribal", "american indian", "alaska native")):
+        return "native"
+    if any(kw in q for kw in ("senior", "elderly", "older voter", "retiree", "65 plus", "65+", "aarp")):
+        return "senior"
+    if any(kw in q for kw in ("college educated", "educated voter", "degree holder", "professional class")):
+        return "educated"
+    if any(kw in q for kw in ("working class", "blue collar", "no college", "trade worker", "union")):
+        return "working_class"
+    if any(kw in q for kw in ("low income", "poverty", "poor", "economically disadvantaged", "public housing")):
+        return "low_income"
+    if any(kw in q for kw in ("high income", "wealthy", "affluent", "upper income", "high earner")):
+        return "high_income"
+    if any(kw in q for kw in ("immigrant", "foreign born", "foreign-born", "naturalized", "new american", "refugee")):
+        return "immigrant"
+    if any(kw in q for kw in ("veteran", "military", "armed forces", "service member", "former military")):
+        return "veteran"
+    if any(kw in q for kw in ("suburban", "suburbs", "homeowner", "owner-occupied", "single family")):
+        return "suburban"
+    if any(kw in q for kw in ("renter", "apartment", "urban renter", "tenant")):
+        return "renter"
+    return "default"
 
 # Check if a file needs to be ingested first
 def triage_router(state: AgentState):
@@ -91,7 +128,11 @@ def intent_router_node(state: AgentState):
     formats = ["CSV", "MARKDOWN", "TEXT"]
     fmt = next((f for f in formats if f in response), "TEXT").lower()
 
-    return {"router_decision": decision.lower(), "output_format": fmt}
+    return {
+        "router_decision":    decision.lower(),
+        "output_format":      fmt,
+        "demographic_intent": _detect_demographic_intent(state["query"]),
+    }
 
 # Constructing workflow for user request
 workflow = StateGraph(AgentState)

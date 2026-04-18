@@ -1,7 +1,24 @@
 # powerbuilder/chat/utils/data_fetcher.py
+#
+# Cache configuration (add to .env to enable):
+#   CENSUS_CACHE_ENABLED=true
+#
+import hashlib
+import json
+import logging
 import os
+import time
+
 import requests
 from dotenv import load_dotenv
+from tenacity import (
+    RetryCallState,
+    retry,
+    retry_if_exception_type,
+    stop_after_attempt,
+    wait_exponential,
+)
+
 from .census_vars import (
     VOTER_DEMOGRAPHICS,
     RACE_TABLES,
@@ -9,6 +26,119 @@ from .census_vars import (
 )
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Census API retry helpers
+# ---------------------------------------------------------------------------
+
+class _CensusRetryable(Exception):
+    """Raised when the Census API returns a retryable HTTP status (429 or 503)."""
+    def __init__(self, status_code: int, url: str) -> None:
+        self.status_code = status_code
+        self.url = url
+        super().__init__(f"Census API returned HTTP {status_code} for {url}")
+
+
+def _census_before_sleep(retry_state: RetryCallState) -> None:
+    """Log each retry attempt at WARNING level with wait time and URL."""
+    url  = retry_state.args[0] if retry_state.args else "unknown URL"
+    wait = retry_state.next_action.sleep if retry_state.next_action else "?"
+    exc  = retry_state.outcome.exception()
+    reason = str(exc) if exc else "unknown error"
+    logger.warning(
+        f"Census API retry {retry_state.attempt_number}/3 — "
+        f"waiting {wait:.0f}s before retrying {url} | reason: {reason}"
+    )
+
+
+@retry(
+    retry=retry_if_exception_type((_CensusRetryable, requests.exceptions.ConnectionError)),
+    wait=wait_exponential(multiplier=5, min=5, max=20),  # 5s, 10s, 20s
+    stop=stop_after_attempt(4),                          # 1 initial + 3 retries
+    before_sleep=_census_before_sleep,
+    reraise=True,
+)
+def _census_get(url: str, params: dict = None, timeout: int = 30) -> requests.Response:
+    """
+    Drop-in replacement for requests.get() for Census API endpoints.
+    Raises _CensusRetryable on HTTP 429/503 so tenacity will retry;
+    ConnectionError (connection reset) is retried directly by tenacity.
+    All other exceptions propagate immediately without retry.
+    """
+    response = requests.get(url, params=params, timeout=timeout)
+    if response.status_code in (429, 503):
+        raise _CensusRetryable(response.status_code, url)
+    return response
+
+# ---------------------------------------------------------------------------
+# Census API response cache
+# ---------------------------------------------------------------------------
+
+_CACHE_DIR     = "data/census_cache"
+_CACHE_MAX_AGE = 86400  # 24 hours in seconds
+
+
+def _cache_enabled() -> bool:
+    return os.getenv("CENSUS_CACHE_ENABLED", "").lower() in ("1", "true", "yes")
+
+
+def _cache_key(url: str, params: dict) -> str:
+    """SHA-256 of the fully-qualified URL + sorted params → hex cache filename."""
+    canonical = url + json.dumps(params or {}, sort_keys=True)
+    return hashlib.sha256(canonical.encode()).hexdigest() + ".json"
+
+
+def _cache_read(key: str):
+    """Return cached data if the file exists and is under 24 h old, else None."""
+    path = os.path.join(_CACHE_DIR, key)
+    try:
+        if not os.path.exists(path):
+            return None
+        if time.time() - os.path.getmtime(path) > _CACHE_MAX_AGE:
+            return None
+        with open(path, encoding="utf-8") as f:
+            data = json.load(f)
+        logger.debug(f"Census cache hit: {key}")
+        return data
+    except Exception as e:
+        logger.warning(f"Census cache read failed ({key}): {e}")
+        return None
+
+
+def _cache_write(key: str, data) -> None:
+    """Write data to the cache directory, creating it if needed."""
+    try:
+        os.makedirs(_CACHE_DIR, exist_ok=True)
+        path = os.path.join(_CACHE_DIR, key)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f)
+        logger.debug(f"Census cache write: {key}")
+    except Exception as e:
+        logger.warning(f"Census cache write failed ({key}): {e}")
+
+
+def _census_get_json(url: str, params: dict = None, timeout: int = 30):
+    """
+    Cache-aware Census fetch that returns parsed JSON.
+    On cache hit (CENSUS_CACHE_ENABLED=true, file < 24h old) returns cached data.
+    On cache miss: fetches via _census_get (with retry), raises HTTPError for
+    non-2xx responses, writes the result to cache, and returns the JSON data.
+    """
+    key = _cache_key(url, params) if _cache_enabled() else None
+    if key is not None:
+        cached = _cache_read(key)
+        if cached is not None:
+            return cached
+    response = _census_get(url, params=params, timeout=timeout)
+    response.raise_for_status()
+    data = response.json()
+    if key is not None:
+        _cache_write(key, data)
+    return data
+
 
 CENSUS_KEY = os.getenv("CENSUS_API_KEY")
 FEC_KEY = os.getenv("FEC_API_KEY")
@@ -22,17 +152,14 @@ class DataFetcher:
         """
         url = f"https://api.census.gov/data/{year}/{dataset}/variables.json"
         try:
-            response = requests.get(url)
-            if response.status_code == 200:
-                variables = response.json().get("variables", {})
-                # Filter variables where keyword appears in the label or concept
-                matches = {
-                    k: v['label'] for k, v in variables.items() 
-                    if keyword.lower() in v.get('label', '').lower() 
-                    or keyword.lower() in v.get('concept', '').lower()
-                }
-                return matches
-            return {"error": f"Failed to reach discovery tool: {response.status_code}"}
+            data = _census_get_json(url)
+            variables = data.get("variables", {})
+            matches = {
+                k: v['label'] for k, v in variables.items()
+                if keyword.lower() in v.get('label', '').lower()
+                or keyword.lower() in v.get('concept', '').lower()
+            }
+            return matches
         except Exception as e:
             return {"error": str(e)}
 
@@ -69,10 +196,7 @@ class DataFetcher:
             params["in"] = geo_config["in"]
 
         try:
-            response = requests.get(url, params=params)
-            response.raise_for_status()
-            data = response.json()
-            
+            data = _census_get_json(url, params=params)
             headers = data[0]
             return [dict(zip(headers, row)) for row in data[1:]]
         except Exception as e:
@@ -173,9 +297,7 @@ class DataFetcher:
             "key": os.getenv("CENSUS_API_KEY"),
         }
         try:
-            response = requests.get(url, params=params, timeout=30)
-            response.raise_for_status()
-            data = response.json()
+            data = _census_get_json(url, params=params, timeout=30)
             headers = data[0]
             result = {}
             for row in data[1:]:

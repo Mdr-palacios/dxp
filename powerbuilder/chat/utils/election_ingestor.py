@@ -71,7 +71,7 @@ class ElectionDataUtility:
         if 2024 not in years:
             return pd.DataFrame()
         try:
-            df = pd.read_csv(ElectionDataUtility.MEDSL_URLS["senate_2024"], low_memory=False)
+            df = pd.read_csv(ElectionDataUtility.MEDSL_URLS["senate_2024"], low_memory=False, encoding="latin-1")
             df = df[df["stage"].str.upper() == "GEN"]
             df = df[df["year"] == 2024]
             df["district"] = "statewide"
