@@ -500,7 +500,9 @@ def election_results_node(state: AgentState) -> dict:
         if district_id == "statewide":
             master_df = raw_master[raw_master["district"] == "statewide"]
         else:
-            master_df = raw_master[raw_master["district"] == district_id]
+            # Cast both sides to str: CSV may store district as integer (e.g. 5107)
+            # while district_id is always a string (e.g. "5107").
+            master_df = raw_master[raw_master["district"].astype(str) == str(district_id)]
 
         if master_df.empty:
             errors_out.append(

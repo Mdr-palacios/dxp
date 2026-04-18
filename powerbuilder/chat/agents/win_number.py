@@ -130,7 +130,9 @@ class WinNumberAgent:
         if district_type == "senate":
             history = df[df["district"] == "statewide"]
         else:
-            history = df[df["district"] == district_id]
+            # Cast both sides to str: the CSV may store district as an integer
+            # (e.g. 5107) while district_id is always a string (e.g. "5107").
+            history = df[df["district"].astype(str) == str(district_id)]
 
         if history.empty:
             return {
