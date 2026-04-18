@@ -52,9 +52,9 @@ def extract_doc_metadata(text: str, llm, filename: str = "") -> dict:
     # -- Date extraction: filename year scan first ----------------------------
     # Check the filename for a 4-digit year before making any LLM call.
     # Many documents embed the year in the filename (e.g. "polling_memo_2023.pdf").
-    filename_year_match = re.search(r"\b(19[9]\d|20[0-2]\d|2030)\b", filename)
+    filename_year_match = re.search(r"(?<!\d)(19[9]\d|20[0-3]\d)(?!\d)", filename)
     if filename_year_match:
-        metadata["date"]             = filename_year_match.group(0)  # "YYYY"
+        metadata["date"]             = f"{filename_year_match.group(0)}-01-01"
         metadata["date_approximate"] = True
     else:
         # -- Date extraction: LLM fallback ------------------------------------

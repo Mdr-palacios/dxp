@@ -87,7 +87,7 @@ def bulk_upsert(directory_path: str, force_reindex: bool = False) -> None:
 
         # -- Metadata extraction (one LLM call per document, not per chunk) ---
         first_text   = llama_docs[0].text
-        doc_metadata = extract_doc_metadata(first_text, llm)
+        doc_metadata = extract_doc_metadata(first_text, llm, filename=filename)
 
         date_info = doc_metadata.get("date") or f"unknown (ingested {doc_metadata['date_ingested']})"
         print(f"  Date: {date_info} | Type: {doc_metadata['document_type']}")

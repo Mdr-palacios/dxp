@@ -101,7 +101,7 @@ def research_node(state: AgentState, k: int = DEFAULT_K) -> dict:
         namespace="__default__",
         text_key="text",
     )
-    general_docs = general_store.similarity_search(query, k=k)
+    general_docs = general_store.max_marginal_relevance_search(query, k=10, fetch_k=100)
 
     logger.debug(f"Found {len(general_docs)} documents in general namespace.")
 
@@ -113,7 +113,7 @@ def research_node(state: AgentState, k: int = DEFAULT_K) -> dict:
             namespace=org_namespace,
             text_key="text",
         )
-        org_docs = org_store.similarity_search(query, k=k)
+        org_docs = org_store.max_marginal_relevance_search(query, k=10, fetch_k=100)
 
         logger.debug(f"Found {len(org_docs)} documents in org namespace '{org_namespace}'.")
 
