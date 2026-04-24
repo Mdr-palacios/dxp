@@ -41,6 +41,7 @@ from .win_number import get_climate_years
 from ..utils.cook_client import CookPoliticalClient
 from ..utils.district_standardizer import GeographyStandardizer
 from ..utils.election_ingestor import AT_LARGE_ALIASES, ElectionDataUtility
+from ..utils.storage import read_dataframe, write_dataframe
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +96,7 @@ def _load_medsl_raw(office_type: str) -> Optional[pd.DataFrame]:
 
     if _medsl_cache_is_fresh(cache_path):
         try:
-            return pd.read_csv(cache_path, low_memory=False)
+            return read_dataframe(cache_path, low_memory=False)
         except Exception as e:
             logger.warning(f"ElectionAnalyst: MEDSL cache read error ({office_type}) — {e}")
 
@@ -106,7 +107,7 @@ def _load_medsl_raw(office_type: str) -> Optional[pd.DataFrame]:
     try:
         logger.info(f"ElectionAnalyst: downloading MEDSL {office_type} CSV (one-time, cached {MEDSL_CACHE_TTL_DAYS}d)…")
         df = pd.read_csv(url, low_memory=False)
-        df.to_csv(cache_path, index=False)
+        write_dataframe(cache_path, df)
         return df
     except Exception as e:
         logger.warning(f"ElectionAnalyst: MEDSL download failed ({office_type}) — {e}")
@@ -493,10 +494,10 @@ def election_results_node(state: AgentState) -> dict:
     # ------------------------------------------------------------------
     # 2. Load master CSV (turnout + cycle context)
     # ------------------------------------------------------------------
-    master_path = os.path.join(MASTER_DIR, f"{state_fips}_master.csv")
+    master_path = f"data/election_results/{state_fips}_master.csv"
     master_df   = None
     try:
-        raw_master = pd.read_csv(master_path)
+        raw_master = read_dataframe(master_path)
         if district_id == "statewide":
             master_df = raw_master[raw_master["district"] == "statewide"]
         else:
@@ -588,7 +589,23 @@ def election_results_node(state: AgentState) -> dict:
     # 5. Cook Political Report (optional)
     # ------------------------------------------------------------------
     cook_client = CookPoliticalClient()
-    cook        = cook_client.fetch(district_type, district_id, state_fips, target_year)
+    fips_to_abbr = CookPoliticalClient._FIPS_TO_ABBR
+    state_abbr   = fips_to_abbr.get(state_fips.zfill(2), state_fips)
+
+    if district_type == "senate":
+        cook = cook_client.get_senate_rating(state_abbr)
+    elif district_type == "governor":
+        cook = cook_client.get_governor_rating(state_abbr)
+    elif district_type == "congressional":
+        try:
+            dist_num = int(district_id[len(state_fips):].lstrip("0") or "1")
+        except (ValueError, IndexError):
+            dist_num = 1
+        cook = cook_client.get_district_rating(state_abbr, dist_num)
+    else:
+        # State legislative races are not covered by Cook
+        from ..utils.cook_client import _null_result
+        cook = _null_result()
 
     # Use Cook PVI for competitiveness if margin data wasn't available
     if competitiveness == "Unknown" and cook.get("cook_pvi"):

@@ -351,6 +351,127 @@ class TestSection4VoterFile:
 
 
 # ---------------------------------------------------------------------------
+# Section 5 — Opposition Research (isolation + pipeline)
+# ---------------------------------------------------------------------------
+
+NON_FATAL_OPP_RESEARCH_PATTERNS = [
+    "MCP client unavailable",
+    "MCP query failed",
+    "No Research Books entry",
+    "No Research Books content",
+    "name extraction LLM call failed",
+    "candidate-matching LLM call failed",
+    "memo formatting LLM call failed",
+]
+
+def is_fatal_opp_research_error(err: str) -> bool:
+    for pattern in NON_FATAL_PATTERNS + NON_FATAL_OPP_RESEARCH_PATTERNS:
+        if pattern in err:
+            return False
+    return True
+
+
+class TestSection5OppositionResearch:
+    """
+    Tests for OppositionResearchAgent in isolation and as part of the full
+    pipeline.  Empty MCP results are non-fatal — coverage varies by race
+    and graceful empty returns are correct behavior.
+    """
+
+    ISOLATION_QUERY = (
+        "I want to build a program plan for Virginia 7th Congressional District"
+    )
+    PIPELINE_QUERY = (
+        "Who is the Republican candidate in Virginia 7th Congressional District "
+        "and what are their vulnerabilities?"
+    )
+
+    @pytest.fixture(scope="class")
+    def isolation_result(self):
+        from chat.agents.opposition_research import OppositionResearchAgent
+
+        state = {
+            "query":              self.ISOLATION_QUERY,
+            "demographic_intent": "youth",
+            "structured_data":    [],
+            "research_results":   [],
+            "active_agents":      [],
+            "errors":             [],
+            "org_namespace":      "general",
+            "output_format":      "markdown",
+            "router_decision":    "",
+            "uploaded_file_path": None,
+            "final_answer":       "",
+        }
+
+        print(f"\n{'='*70}")
+        print("ISOLATION: OppositionResearchAgent.run() direct call")
+        print(f'  "{self.ISOLATION_QUERY}"')
+        print(f"{'='*70}")
+
+        result = OppositionResearchAgent.run(state)
+
+        active   = result.get("active_agents", [])
+        research = result.get("research_results", [])
+        print(f"\n[active_agents returned] {active}")
+        print(f"[research_results count] {len(research)}")
+        if research:
+            print(f"[first result snippet]   {str(research[0])[:200]}")
+        else:
+            print("[research_results]       empty — MCP may not cover VA-07 (non-fatal)")
+
+        return result
+
+    @pytest.fixture(scope="class")
+    def pipeline_result(self):
+        return run_query(self.PIPELINE_QUERY, "Q5: Opposition research pipeline")
+
+    # -- Isolation tests --
+
+    def test_opposition_research_agent_ran(self, isolation_result):
+        active = isolation_result.get("active_agents", [])
+        assert "opposition_research" in active, (
+            f"'opposition_research' not in active_agents returned by run(). Got: {active}"
+        )
+
+    def test_isolation_no_fatal_errors(self, isolation_result):
+        errors = isolation_result.get("errors", [])
+        fatal = [e for e in errors if is_fatal_opp_research_error(e)]
+        assert not fatal, f"Fatal errors in isolation run: {fatal}"
+
+    def test_isolation_returns_gracefully(self, isolation_result):
+        assert isinstance(isolation_result, dict), (
+            "OppositionResearchAgent.run() must return a dict"
+        )
+        research = isolation_result.get("research_results", [])
+        assert isinstance(research, list), (
+            f"research_results must be a list, got {type(research)}"
+        )
+        # 0 or more results are both acceptable
+        coverage = "found" if research else "empty — graceful, non-fatal"
+        print(f"\n  [info] research_results count: {len(research)} ({coverage})")
+
+    # -- Pipeline tests --
+
+    def test_pipeline_opposition_research_ran(self, pipeline_result):
+        active = pipeline_result.get("active_agents", [])
+        assert "opposition_research" in active, (
+            f"'opposition_research' agent did not run in pipeline. Active: {active}"
+        )
+
+    def test_pipeline_final_answer_non_empty(self, pipeline_result):
+        answer = pipeline_result.get("final_answer", "")
+        assert len(answer) > 50, (
+            f"final_answer too short or empty (len={len(answer)})"
+        )
+
+    def test_pipeline_no_fatal_errors(self, pipeline_result):
+        errors = pipeline_result.get("errors", [])
+        fatal = [e for e in errors if is_fatal_opp_research_error(e)]
+        assert not fatal, f"Fatal errors in opposition research pipeline: {fatal}"
+
+
+# ---------------------------------------------------------------------------
 # Standalone runner
 # ---------------------------------------------------------------------------
 if __name__ == "__main__":
@@ -407,6 +528,13 @@ if __name__ == "__main__":
             ["voter_file"],
             voter_file_path,
         ),
+        (
+            "Who is the Republican candidate in Virginia 7th Congressional District "
+            "and what are their vulnerabilities?",
+            "Q5: Opposition research pipeline",
+            ["opposition_research"],
+            None,
+        ),
     ]
 
     all_passed = True
@@ -421,7 +549,12 @@ if __name__ == "__main__":
         active  = result.get("active_agents", [])
         errors  = result.get("errors", [])
         answer  = result.get("final_answer", "")
-        err_fn  = is_fatal_voter_file_error if "voter_file" in required_agents else is_fatal_error
+        if "voter_file" in required_agents:
+            err_fn = is_fatal_voter_file_error
+        elif "opposition_research" in required_agents:
+            err_fn = is_fatal_opp_research_error
+        else:
+            err_fn = is_fatal_error
         fatal   = [e for e in errors if err_fn(e)]
         missing = [a for a in required_agents if a not in active]
 

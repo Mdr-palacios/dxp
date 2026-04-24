@@ -14,6 +14,7 @@ from .finance_agent import finance_node
 from .export import export_node
 from .election_results import ElectionAnalystAgent
 from .voterfile_agent import VoterFileAgent
+from .opposition_research import OppositionResearchAgent
 
 
 # Define LLM and temperature for workflow
@@ -70,6 +71,39 @@ def _is_voter_file_query(query: str) -> bool:
     return any(kw in q for kw in _VOTER_FILE_KEYWORDS)
 
 
+# Keyword-based fast path for opposition research queries.
+_OPP_RESEARCH_KEYWORDS = (
+    "republican candidate", "opposing candidate", "opposition research",
+    "vulnerabilities", "opponent", "other side",
+)
+
+def _is_opposition_research_query(query: str) -> bool:
+    q = query.lower()
+    return any(kw in q for kw in _OPP_RESEARCH_KEYWORDS)
+
+
+# District reference detection — geographic agents require a specific district.
+_DISTRICT_KEYWORDS = (
+    "congressional district", "district", "senate district",
+    "state senate", "state house", "governor",
+)
+
+def _has_district_reference(query: str) -> bool:
+    q = query.lower()
+    return any(kw in q for kw in _DISTRICT_KEYWORDS)
+
+
+def voter_file_post_router(state: AgentState) -> str:
+    """
+    After voter_file runs: skip geographic agents when no district is mentioned.
+    Routes directly to researcher so the segment research queries are fulfilled
+    without detour through election_results / win_number / precincts.
+    """
+    if _has_district_reference(state.get("query", "")):
+        return "intent_router"
+    return "researcher"
+
+
 # Check if a file needs to be ingested first
 def triage_router(state: AgentState):
     if state.get("uploaded_file_path"):
@@ -78,14 +112,48 @@ def triage_router(state: AgentState):
 
 # Intent Router / Classification
 def intent_router_node(state: AgentState):
-    # Fast path: skip LLM for unambiguous voter file queries
+    # Fast path: skip LLM for unambiguous voter file queries — only when a file
+    # is actually present; keyword match alone must not route to voter_file.
     active_agents  = state.get("active_agents", [])
-    if _is_voter_file_query(state["query"]) and "voter_file" not in active_agents:
+    if (
+        _is_voter_file_query(state["query"])
+        and state.get("uploaded_file_path")
+        and "voter_file" not in active_agents
+    ):
         return {
             "router_decision":    "voter_file",
             "output_format":      "markdown",
             "demographic_intent": "default",
         }
+
+    # Fast path: opposition research queries — run election_results first to get
+    # the incumbent name, then opposition_research, without an LLM routing call.
+    if _is_opposition_research_query(state["query"]):
+        demographic = _detect_demographic_intent(state["query"])
+        if "election_results" not in active_agents:
+            return {
+                "router_decision":    "election_results",
+                "output_format":      "markdown",
+                "demographic_intent": demographic,
+            }
+        if "opposition_research" not in active_agents:
+            return {
+                "router_decision":    "opposition_research",
+                "output_format":      "markdown",
+                "demographic_intent": demographic,
+            }
+
+    # Fast path: voter file sequence (no district) — after voter_file, force
+    # researcher → messaging → cost_calculator → finish, skipping geographic agents.
+    if "voter_file" in active_agents and not _has_district_reference(state["query"]):
+        demographic = _detect_demographic_intent(state["query"])
+        if "researcher" not in active_agents:
+            return {"router_decision": "researcher",       "output_format": "markdown", "demographic_intent": demographic}
+        if "messaging" not in active_agents:
+            return {"router_decision": "messaging",        "output_format": "markdown", "demographic_intent": demographic}
+        if "cost_calculator" not in active_agents:
+            return {"router_decision": "cost_calculator",  "output_format": "markdown", "demographic_intent": demographic}
+        return     {"router_decision": "finish",           "output_format": "markdown", "demographic_intent": demographic}
 
     llm = get_model()
 
@@ -109,6 +177,7 @@ def intent_router_node(state: AgentState):
     - WIN_NUMBER: Calculates votes needed to win based on Census CVAP, historical turnout, and district type.
     - PRECINCTS: Identifies and ranks target precincts with voter demographic breakdowns.
     - ELECTION_RESULTS: Analyzes past election results, vote shares, and historical trends.
+    - OPPOSITION_RESEARCH: Retrieves Republican candidate research books from American Bridge Research Books. Returns vulnerability analysis, contrast messaging angles, and attacks to avoid. Runs after ELECTION_RESULTS in full plans and messaging requests; skip for win-number-only or precinct-only queries.
     - MESSAGING: Generates canvassing scripts, text messages, mail narratives, and digital ad copy grounded in research.
     - COST_CALCULATOR: Estimates cost of campaign tactics (canvassing, phone banking, digital ads, mailers).
     - VOTER_FILE: Analyzes an uploaded voter file (CSV or Excel). Segments voters by age cohort, gender, party, and turnout history, then matches messaging research from the research library to each segment.
@@ -119,16 +188,18 @@ def intent_router_node(state: AgentState):
     1. POLITICAL PLAN REQUEST: If the user is asking for a political plan, program plan, or comprehensive campaign strategy, you must run agents in this exact order, returning the single next agent that has NOT yet appeared in the "Agents already completed" list:
        Step 1 → RESEARCHER
        Step 2 → ELECTION_RESULTS
-       Step 3 → WIN_NUMBER
-       Step 4 → PRECINCTS
-       Step 5 → MESSAGING
-       Step 6 → COST_CALCULATOR
-       Step 7 → FINISH
+       Step 3 → OPPOSITION_RESEARCH
+       Step 4 → WIN_NUMBER
+       Step 5 → PRECINCTS
+       Step 6 → MESSAGING
+       Step 7 → COST_CALCULATOR
+       Step 8 → FINISH
        FORMAT: MARKDOWN
 
-    2. VOTER FILE REQUEST: If the user uploads a voter file or asks to analyze, segment, or pull messaging for a voter list, return VOTER_FILE immediately. Do not run any other agent first.
+    2. VOTER FILE REQUEST: Only return VOTER_FILE if an uploaded_file_path is present in state (file_uploaded={bool(state.get("uploaded_file_path"))}). If no file is uploaded, do NOT return VOTER_FILE even if the user mentions voter files.
 
     3. SINGLE-TOPIC REQUEST: If the user asks a focused question, return only the single most relevant specialist. If you already have enough information to answer, return FINISH.
+       Exception: if the question is about a Republican candidate, opponent vulnerabilities, or opposition research for a specific district, always run ELECTION_RESULTS first (to get the incumbent name), then OPPOSITION_RESEARCH, then FINISH — even for single-topic queries.
 
     IMPORTANT: Never return an agent that already appears in "Agents already completed."
 
@@ -139,6 +210,7 @@ def intent_router_node(state: AgentState):
 
     # Order matters: longer/more specific strings must come before substrings.
     specialists = [
+        "OPPOSITION_RESEARCH",
         "ELECTION_RESULTS",
         "COST_CALCULATOR",
         "VOTER_FILE",
@@ -149,6 +221,11 @@ def intent_router_node(state: AgentState):
         "FINISH",
     ]
     decision = next((s for s in specialists if s in response), "FINISH")
+
+    # Safety guard: never route to voter_file without an uploaded file,
+    # regardless of what the LLM returned.
+    if decision == "VOTER_FILE" and not state.get("uploaded_file_path"):
+        decision = "RESEARCHER"
 
     formats = ["CSV", "MARKDOWN", "TEXT"]
     fmt = next((f for f in formats if f in response), "TEXT").lower()
@@ -173,6 +250,7 @@ workflow.add_node("win_number", WinNumberAgent.run)
 workflow.add_node("messaging", messaging_node)
 workflow.add_node("cost_calculator", finance_node)
 workflow.add_node("election_results", ElectionAnalystAgent.run)
+workflow.add_node("opposition_research", OppositionResearchAgent.run)
 workflow.add_node("voter_file", VoterFileAgent.run)
 
 workflow.add_node("synthesizer", export_node)
@@ -202,8 +280,9 @@ workflow.add_conditional_edges(
         "win_number":       "win_number",
         "messaging":        "messaging",
         "cost_calculator":  "cost_calculator",
-        "election_results": "election_results",
-        "voter_file":       "voter_file",
+        "election_results":   "election_results",
+        "opposition_research":"opposition_research",
+        "voter_file":         "voter_file",
         "finish":           "synthesizer",
     }
 )
@@ -215,8 +294,16 @@ workflow.add_edge("precincts",     "intent_router")
 workflow.add_edge("win_number",    "intent_router")
 workflow.add_edge("messaging",        "intent_router")
 workflow.add_edge("cost_calculator",  "intent_router")
-workflow.add_edge("election_results", "intent_router")
-workflow.add_edge("voter_file",       "intent_router")
+workflow.add_edge("election_results",   "intent_router")
+workflow.add_edge("opposition_research","intent_router")
+workflow.add_conditional_edges(
+    "voter_file",
+    voter_file_post_router,
+    {
+        "researcher":    "researcher",
+        "intent_router": "intent_router",
+    }
+)
 
 workflow.add_edge("synthesizer", END)
 

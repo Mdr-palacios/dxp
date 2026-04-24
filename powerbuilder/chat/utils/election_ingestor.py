@@ -4,6 +4,7 @@ import pandas as pd
 import os
 from .data_fetcher import DataFetcher
 from .census_vars import VOTER_DEMOGRAPHICS
+from .storage import file_exists, read_dataframe, write_dataframe
 
 logger = logging.getLogger(__name__)
 
@@ -152,13 +153,13 @@ class ElectionDataUtility:
             # House: prefer the local .tab file (comma-delimited despite the .tab extension)
             # to avoid a large remote download. Fall back to the remote URL when absent.
             _house_local = "data/election_results/house_master_raw.tab"
-            if os.path.exists(_house_local):
-                house_df = pd.read_csv(_house_local, low_memory=False, encoding=MEDSL_ENCODING)
+            if file_exists(_house_local):
+                house_df = read_dataframe(_house_local, low_memory=False, encoding=MEDSL_ENCODING)
             else:
                 house_df = pd.read_csv(ElectionDataUtility.MEDSL_URLS["house"], low_memory=False, encoding=MEDSL_ENCODING)
             _senate_local = "data/election_results/senate_master_raw.csv"
-            if os.path.exists(_senate_local):
-                senate_df = pd.read_csv(_senate_local, low_memory=False, encoding=MEDSL_ENCODING)
+            if file_exists(_senate_local):
+                senate_df = read_dataframe(_senate_local, low_memory=False, encoding=MEDSL_ENCODING)
             else:
                 senate_df = pd.read_csv(ElectionDataUtility.MEDSL_URLS["senate"], low_memory=False, encoding=MEDSL_ENCODING)
 
@@ -259,7 +260,7 @@ class ElectionDataUtility:
                     )
 
                 master_df = pd.concat([state_house, state_senate], ignore_index=True)
-                master_df.to_csv(state_path, index=False)
+                write_dataframe(state_path, master_df)
                 print(f"  Synced {fips_str} ({len(master_df)} races)")
 
             return True

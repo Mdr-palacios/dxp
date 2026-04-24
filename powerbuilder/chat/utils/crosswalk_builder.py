@@ -26,6 +26,7 @@ from shapely.validation import make_valid
 
 from .district_standardizer import GeographyStandardizer
 from .data_fetcher import DataFetcher
+from . import storage
 
 logger = logging.getLogger(__name__)
 
@@ -33,9 +34,8 @@ logger = logging.getLogger(__name__)
 # Paths and constants
 # ---------------------------------------------------------------------------
 
-TOPOJSON_PATH = os.path.abspath(
-    os.path.join(os.path.dirname(__file__), "../precinct_shapefiles/2024precincts-with-results.topojson")
-)
+# Relative path so storage.py can map it to S3 (shapefiles/* prefix).
+TOPOJSON_PATH = "chat/precinct_shapefiles/2024precincts-with-results.topojson"
 
 CROSSWALK_DIR = "data/crosswalks"
 
@@ -74,11 +74,16 @@ def _read_topojson(path: str) -> gpd.GeoDataFrame:
     """
     Read a TopoJSON file into a GeoDataFrame.
 
+    Calls storage.sync_to_local() so the file is available as a real
+    filesystem path (required by geopandas/fiona and the topojson library).
+
     Tries geopandas/fiona first (zero extra dependencies). Falls back to the
     `topojson` library if fiona's TopoJSON driver is unavailable. Raises
     RuntimeError with install instructions if both fail.
     """
-    with open(path) as f:
+    local_path = storage.sync_to_local(path)
+
+    with open(local_path) as f:
         raw = json.load(f)
 
     # Infer layer name from the first key under "objects"
@@ -89,7 +94,7 @@ def _read_topojson(path: str) -> gpd.GeoDataFrame:
 
     # Attempt 1: geopandas / fiona (GDAL TopoJSON driver)
     try:
-        gdf = gpd.read_file(path, layer=layer_name)
+        gdf = gpd.read_file(local_path, layer=layer_name)
         logger.debug(f"Read TopoJSON via geopandas/fiona (layer: '{layer_name}').")
         if gdf.crs is None:
             gdf = gdf.set_crs("EPSG:4326")
@@ -363,7 +368,7 @@ def build_crosswalk(
         result = intersected[[c for c in out_cols if c in intersected.columns]].copy()
         result["weight"] = result["weight"].round(6)
         result = result.sort_values(["bg_geoid", "weight"], ascending=[True, False])
-        result.to_csv(output_path, index=False)
+        storage.write_dataframe(output_path, result)
 
         logger.info(
             f"  Saved {len(result)} BG-precinct pairs to {output_path}. "

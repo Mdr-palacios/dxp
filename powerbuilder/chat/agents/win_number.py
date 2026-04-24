@@ -10,6 +10,7 @@ from ..utils.data_fetcher import DataFetcher
 from ..utils.district_standardizer import GeographyStandardizer
 from ..utils.census_vars import VOTER_DEMOGRAPHICS
 from ..utils.election_ingestor import AT_LARGE_ALIASES
+from ..utils.storage import read_dataframe
 from .state import AgentState
 
 CVAP_KEY = VOTER_DEMOGRAPHICS.get("total_cvap", "B29001_001E")
@@ -122,7 +123,7 @@ class WinNumberAgent:
         # 2. Load historical election data
         path = f"data/election_results/{state_fips}_master.csv"
         try:
-            df = pd.read_csv(path)
+            df = read_dataframe(path)
         except FileNotFoundError:
             return {"error": "Historical data not synced. Run election_ingestor first."}
 

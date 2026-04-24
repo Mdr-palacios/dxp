@@ -13,6 +13,7 @@ from langchain_openai import ChatOpenAI
 from ..utils.census_vars import VOTER_DEMOGRAPHICS, MULTI_VAR_METRICS, TRACT_ONLY_METRICS
 from ..utils.data_fetcher import DataFetcher
 from ..utils.district_standardizer import GeographyStandardizer
+from ..utils.storage import file_exists, read_dataframe
 from .state import AgentState
 
 logger = logging.getLogger(__name__)
@@ -431,13 +432,13 @@ class PrecinctsAgent:
         # which would break the merge with bg_df where bg_geoid is always a string.
         district_crosswalk = f"data/crosswalks/{state_fips}_{district_id}_bg_to_precinct.csv"
         state_crosswalk    = f"data/crosswalks/{state_fips}_bg_to_precinct.csv"
-        crosswalk_path     = district_crosswalk if os.path.exists(district_crosswalk) else state_crosswalk
+        crosswalk_path     = district_crosswalk if file_exists(district_crosswalk) else state_crosswalk
         if crosswalk_path == district_crosswalk:
             logger.info(f"  Using district-specific crosswalk: {crosswalk_path}")
         else:
             logger.info(f"  District crosswalk not found; using state-level: {crosswalk_path}")
         try:
-            crosswalk = pd.read_csv(crosswalk_path, dtype={"bg_geoid": str})
+            crosswalk = read_dataframe(crosswalk_path, dtype={"bg_geoid": str})
         except FileNotFoundError:
             return {"error": f"Crosswalk missing for state {state_fips}. "
                              "Run crosswalk_builder.build_crosswalk() first."}

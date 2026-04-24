@@ -346,6 +346,117 @@ def _build_budget_program(budget: float, unit_costs: dict) -> dict:
     return program
 
 
+def _build_voter_file_budget(universe_size: int, unit_costs: dict) -> dict:
+    """
+    Cost to contact the full voter file universe once per tactic.
+    Returns tactic → {contacts, unit_cost, total_cost, note?}.
+    """
+    design_fee  = unit_costs.get("mail_design_fee", DEFAULT_UNIT_COSTS["mail_design_fee"])
+    digital_min = unit_costs.get("digital_minimum", DEFAULT_UNIT_COSTS["digital_minimum"])
+    impressions = universe_size * 10  # 10 impressions per voter
+    return {
+        "canvassing": {
+            "contacts":   universe_size,
+            "unit_cost":  unit_costs.get("door_knock",    DEFAULT_UNIT_COSTS["door_knock"]),
+            "total_cost": round(universe_size * unit_costs.get("door_knock", DEFAULT_UNIT_COSTS["door_knock"]), 2),
+        },
+        "phones": {
+            "contacts":   universe_size,
+            "unit_cost":  unit_costs.get("phone_call",    DEFAULT_UNIT_COSTS["phone_call"]),
+            "total_cost": round(universe_size * unit_costs.get("phone_call", DEFAULT_UNIT_COSTS["phone_call"]), 2),
+        },
+        "text": {
+            "contacts":   universe_size,
+            "unit_cost":  unit_costs.get("text_message",  DEFAULT_UNIT_COSTS["text_message"]),
+            "total_cost": round(universe_size * unit_costs.get("text_message", DEFAULT_UNIT_COSTS["text_message"]), 2),
+        },
+        "mail": {
+            "contacts":   universe_size,
+            "unit_cost":  unit_costs.get("mail_piece",    DEFAULT_UNIT_COSTS["mail_piece"]),
+            "total_cost": round(design_fee + universe_size * unit_costs.get("mail_piece", DEFAULT_UNIT_COSTS["mail_piece"]), 2),
+            "note":       f"Includes ${design_fee:,.0f} flat design fee",
+        },
+        "digital": {
+            "contacts":   impressions,
+            "unit_cost":  unit_costs.get("digital_cpm",   DEFAULT_UNIT_COSTS["digital_cpm"]),
+            "total_cost": round(max(digital_min, impressions * unit_costs.get("digital_cpm", DEFAULT_UNIT_COSTS["digital_cpm"])), 2),
+            "note":       "Impressions (10 per voter in universe)",
+        },
+    }
+
+
+def _format_voter_file_narrative(
+    universe_size: int,
+    vf_label: str,
+    unit_costs: dict,
+    vf_budget: dict,
+    budget_available: Optional[float],
+    budget_program: Optional[dict],
+) -> str:
+    """Narrative memo for voter-file-mode budget estimates."""
+    lines = [
+        f"--- BUDGET ESTIMATE: {vf_label.upper()} | SOURCE: Voter File Universe + Unit Cost Analysis ---",
+        "",
+        "### Voter File Universe Budget",
+        f"Budget projections are based on the uploaded voter file universe of **{universe_size:,} voters**.",
+        "The estimates below show the cost to contact the full universe once per tactic.",
+        "",
+        "### Cost to Contact Full Universe",
+    ]
+    tactic_labels = {
+        "canvassing": "Canvassing (door knock)",
+        "phones":     "Phone calls",
+        "text":       "Text messages",
+        "mail":       "Mail pieces",
+        "digital":    "Digital impressions",
+    }
+    for tactic, data in vf_budget.items():
+        label = tactic_labels.get(tactic, tactic)
+        note  = f" ({data['note']})" if data.get("note") else ""
+        lines.append(
+            f"- {label}: **${data['total_cost']:,.0f}** "
+            f"({data['contacts']:,} contacts @ ${data['unit_cost']:.2f}/unit{note})"
+        )
+
+    dph = int(unit_costs.get("doors_per_hour", DEFAULT_UNIT_COSTS["doors_per_hour"]))
+    lines += [
+        "",
+        "### Per-Contact Rates",
+        f"- Door knock: ${unit_costs['door_knock']:.2f}/door ({dph} doors/hour avg.)",
+        f"- Phone call: ${unit_costs['phone_call']:.2f}/call",
+        f"- Text message: ${unit_costs['text_message']:.2f}/text",
+        f"- Mail piece: ${unit_costs['mail_piece']:.2f}/piece + ${unit_costs.get('mail_design_fee', 500):,.0f} flat design fee",
+        f"- Digital: ${unit_costs.get('digital_cpm', 0.02):.2f}/impression (${unit_costs.get('digital_minimum', 1000):,.0f} minimum)",
+        "*(Rates sourced from tool_templates/costs.json — edit that file to reflect your market)*",
+    ]
+
+    if budget_available is not None and budget_program:
+        lines += [
+            "",
+            f"### Budget-Constrained Program (${budget_available:,.0f} available)",
+            "Recommended contact goals based on available budget:",
+        ]
+        tactic_label_map = {
+            "door_knock":   "Door knocks",
+            "phone_call":   "Phone calls",
+            "text_message": "Text messages",
+            "mail_piece":   "Mail pieces",
+            "digital":      "Digital impressions",
+        }
+        for tactic, data in budget_program.items():
+            label = tactic_label_map.get(tactic, tactic)
+            note  = f" ({data['note']})" if data.get("note") else ""
+            lines.append(
+                f"- {label}: {data['contacts']:,} contacts "
+                f"(${data['budget_allocated']:,.0f} @ ${data['unit_cost']:.2f}/unit{note})"
+            )
+        total_contacts = sum(d["contacts"] for d in budget_program.values())
+        lines.append(f"\n**Total contacts: {total_contacts:,}**")
+
+    lines.append("")
+    return "\n".join(lines)
+
+
 def _format_narrative(
     district_label: str,
     mode: str,
@@ -472,12 +583,101 @@ def finance_node(state: AgentState) -> dict:
         district_id   = prior["district_id"]
         target_year   = prior.get("target_year", 2026)
     else:
-        # Fallback: extract from query via LLM
+        # -----------------------------------------------------------------------
+        # Voter file fallback: no geographic context but voter file data present.
+        # Skip FEC / district lookup entirely; estimate from universe size.
+        # -----------------------------------------------------------------------
+        vf_entry = next(
+            (d for d in state.get("structured_data", []) if d.get("agent") == "voter_file"),
+            None,
+        )
+        if vf_entry:
+            universe_size = (
+                vf_entry.get("total_voters")
+                or vf_entry.get("summary", {}).get("total_voters", 0)
+            )
+            unit_costs_vf = _load_unit_costs()
+
+            if not universe_size:
+                return {
+                    "research_results": [
+                        "--- BUDGET ESTIMATE | SOURCE: Voter File ---\n\n"
+                        "Voter file data was found but total_voters is missing or zero. "
+                        "Cannot estimate contact costs without a universe size.\n"
+                    ],
+                    "active_agents": ["cost_calculator"],
+                    "errors":        ["FinanceAgent: voter_file entry missing total_voters — skipping budget estimate."],
+                }
+
+            vf_budget = _build_voter_file_budget(universe_size, unit_costs_vf)
+
+            # Extract budget from query if the user specified one
+            budget_available_vf: Optional[float] = None
+            _bq = state.get("query", "").strip()
+            if _bq:
+                try:
+                    _llm_vf = ChatOpenAI(model="gpt-4o", temperature=0,
+                                         openai_api_key=os.environ["OPENAI_API_KEY"])
+                    _br = _llm_vf.invoke(
+                        f'Does this query mention a specific budget? If yes return the number only. '
+                        f'If no, return NONE.\nQuery: "{_bq}"\nBUDGET:'
+                    ).content.strip()
+                    if _br.upper() != "NONE":
+                        budget_available_vf = float(re.sub(r"[^\d.]", "", _br) or "0") or None
+                except Exception:
+                    pass
+
+            budget_program_vf = (
+                _build_budget_program(budget_available_vf, unit_costs_vf)
+                if budget_available_vf else None
+            )
+
+            narrative_vf = _format_voter_file_narrative(
+                universe_size=universe_size,
+                vf_label="Voter File Universe",
+                unit_costs=unit_costs_vf,
+                vf_budget=vf_budget,
+                budget_available=budget_available_vf,
+                budget_program=budget_program_vf,
+            )
+
+            logger.info(
+                f"FinanceAgent: voter-file mode | universe={universe_size:,} | "
+                f"budget={'${:,.0f}'.format(budget_available_vf) if budget_available_vf else 'not specified'}"
+            )
+
+            return {
+                "structured_data": [{
+                    "agent":          "finance",
+                    "mode":           "voter_file",
+                    "data_source":    "unit_cost_only",
+                    "universe_size":  universe_size,
+                    "unit_costs":     unit_costs_vf,
+                    "budget_available": budget_available_vf,
+                    "vf_budget":      vf_budget,
+                    "budget_program": budget_program_vf,
+                }],
+                "research_results": [narrative_vf],
+                "active_agents":    ["cost_calculator"],
+            }
+
+        # -----------------------------------------------------------------------
+        # No voter file data — try to extract geographic context from query via LLM
+        # -----------------------------------------------------------------------
         query = state.get("query", "").strip()
         if not query:
+            unit_costs_fb = _load_unit_costs()
             return {
-                "errors":        ["FinanceAgent: state['query'] is missing or empty — cannot extract district parameters."],
+                "research_results": [_format_narrative(
+                    district_label="Unspecified District",
+                    mode="unit_cost_only",
+                    fec_result=None, category_breakdown=None,
+                    unit_costs=unit_costs_fb,
+                    budget_available=None, budget_program=None,
+                    comparable_cycles=[], district_type="congressional",
+                )],
                 "active_agents": ["cost_calculator"],
+                "errors":        ["FinanceAgent: no query or voter file context — returning unit cost rates only."],
             }
 
         llm = ChatOpenAI(
@@ -512,9 +712,21 @@ TARGET_YEAR: [4-digit election year, default 2026]
         state_name = params.get("STATE", "")
         state_fips = GeographyStandardizer.STATE_FIPS.get(state_name.lower())
         if not state_fips:
+            unit_costs_fb = _load_unit_costs()
+            warn_msg = f"FinanceAgent: could not resolve state for '{state_name}' — returning unit cost rates only."
+            logger.warning(warn_msg)
             return {
-                "errors":        [f"FinanceAgent: Could not resolve state FIPS for '{state_name}'."],
-                "active_agents": ["cost_calculator"],
+                "research_results": [_format_narrative(
+                    district_label=f"Unspecified District ({state_name or 'unknown state'})",
+                    mode="unit_cost_only",
+                    fec_result=None, category_breakdown=None,
+                    unit_costs=unit_costs_fb,
+                    budget_available=None, budget_program=None,
+                    comparable_cycles=[], district_type="congressional",
+                )],
+                "structured_data": [{"agent": "finance", "mode": "unit_cost_only", "data_source": "none"}],
+                "active_agents":   ["cost_calculator"],
+                "errors":          [warn_msg],
             }
 
         district_type = params.get("DISTRICT_TYPE", "congressional").lower()
