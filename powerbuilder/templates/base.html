@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>{% block title %}Powerbuilder{% endblock %}</title>
+
+  <!-- Tailwind CSS CDN -->
+  <script src="https://cdn.tailwindcss.com"></script>
+
+  <!-- HTMX -->
+  <script src="https://unpkg.com/htmx.org@1.9.12" crossorigin="anonymous"></script>
+
+  <!-- Alpine.js -->
+  <script defer src="https://unpkg.com/alpinejs@3.13.10/dist/cdn.min.js"></script>
+
+  <style>
+    /* ── Design tokens ─────────────────────────────────────────── */
+    :root {
+      --bg-primary:    #0f1117;
+      --bg-secondary:  #1a1d27;
+      --bg-card:       #1e2130;
+      --accent:        #3b82f6;
+      --accent-hover:  #2563eb;
+      --accent-glow:   rgba(59, 130, 246, 0.15);
+      --text-primary:  #f1f5f9;
+      --text-secondary:#94a3b8;
+      --text-muted:    #475569;
+      --border:        #2d3148;
+      --border-accent: #3b82f6;
+      --success:       #10b981;
+      --warning:       #f59e0b;
+      --error:         #ef4444;
+    }
+
+    /* ── Base ───────────────────────────────────────────────────── */
+    *, *::before, *::after { box-sizing: border-box; }
+
+    html, body {
+      height: 100%;
+      margin: 0;
+      padding: 0;
+    }
+
+    body {
+      background-color: var(--bg-primary);
+      color: var(--text-primary);
+      font-family: 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+      font-size: 14px;
+      line-height: 1.6;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* ── Custom scrollbar ───────────────────────────────────────── */
+    ::-webkit-scrollbar        { width: 5px; height: 5px; }
+    ::-webkit-scrollbar-track  { background: var(--bg-secondary); }
+    ::-webkit-scrollbar-thumb  { background: var(--border); border-radius: 4px; }
+    ::-webkit-scrollbar-thumb:hover { background: var(--text-muted); }
+
+    /* ── Focus ring ─────────────────────────────────────────────── */
+    *:focus-visible {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
+  </style>
+
+  {% block head %}{% endblock %}
+</head>
+
+<body style="display:flex; flex-direction:column; min-height:100%;">
+
+  <!-- ── Top navigation ──────────────────────────────────────────── -->
+  <nav style="
+    background: var(--bg-secondary);
+    border-bottom: 1px solid var(--border);
+    height: 52px;
+    padding: 0 1.25rem;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    flex-shrink: 0;
+    z-index: 40;
+  ">
+    <a href="/chat/" style="text-decoration:none; display:flex; align-items:center; gap:0.5rem;">
+      <!-- Wordmark -->
+      <svg width="20" height="20" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+        <rect width="20" height="20" rx="5" fill="var(--accent)"/>
+        <path d="M5 14V6h4.5a2.5 2.5 0 0 1 0 5H5m0-5v5m0 0v3" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M11 14l3-8 3 8" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        <path d="M12 11.5h4" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/>
+      </svg>
+      <span style="color:var(--accent); font-weight:700; font-size:1rem; letter-spacing:-0.02em;">
+        Powerbuilder
+      </span>
+    </a>
+
+    <span style="
+      background: var(--accent-glow);
+      color: var(--accent);
+      border: 1px solid rgba(59,130,246,0.35);
+      font-size: 0.65rem;
+      font-weight: 600;
+      letter-spacing: 0.06em;
+      padding: 2px 8px;
+      border-radius: 999px;
+      text-transform: uppercase;
+    ">Beta</span>
+  </nav>
+
+  <!-- ── Main content ────────────────────────────────────────────── -->
+  <main style="flex:1; display:flex; flex-direction:column; min-height:0;">
+    {% block content %}{% endblock %}
+  </main>
+
+  {% block scripts %}{% endblock %}
+</body>
+</html>

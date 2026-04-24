@@ -1,0 +1,70 @@
+{% comment %}
+HTMX partial — assistant message bubble.
+Appended to #messages via hx-swap="beforeend" in chat.html.
+
+Context variables:
+    answer_html        str  — markdown rendered to HTML (mark as |safe)
+    active_agents      list — agent names e.g. ["researcher", "precincts"]
+    download_filename  str|None — basename of generated file
+    download_label     str|None — "Download Word Doc" or "Download CSV"
+    errors             list — non-fatal pipeline error strings
+    error              str|None — fatal error message (pipeline never ran)
+{% endcomment %}
+
+{% if error %}
+<div class="msg-row asst">
+  <div class="bubble-error">
+    <svg width="13" height="13" viewBox="0 0 16 16" fill="none" style="flex-shrink:0;vertical-align:middle;margin-right:5px;">
+      <circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/>
+      <path d="M8 5v3.5M8 11v.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+    </svg>
+    {{ error }}
+  </div>
+</div>
+
+{% else %}
+<div class="msg-row asst">
+  <div class="bubble-asst">
+
+    <!-- Markdown-rendered answer -->
+    <div class="prose-dark">
+      {{ answer_html|safe }}
+    </div>
+
+    <!-- Non-fatal pipeline warnings (shown subtly under answer) -->
+    {% if errors %}
+    <div style="margin-top:0.5rem; padding-top:0.5rem; border-top:1px solid var(--border);">
+      {% for err in errors %}
+      <p style="color:var(--text-muted); font-size:0.72rem; margin:0 0 0.2rem; font-style:italic;">
+        ⚠ {{ err }}
+      </p>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Agent pills -->
+    {% if active_agents %}
+    <div class="agents-row">
+      {% for agent in active_agents %}
+      <span class="agent-pill">{{ agent }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    <!-- Download button -->
+    {% if download_filename %}
+    <div>
+      <a href="/download/{{ download_filename }}/" class="btn-download">
+        <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+          <path d="M8 2v8m0 0l-3-3m3 3l3-3M3 13h10"
+                stroke="currentColor" stroke-width="1.6"
+                stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+        {{ download_label }}
+      </a>
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+{% endif %}

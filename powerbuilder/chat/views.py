@@ -1,278 +1,270 @@
+# chat/views.py
 """
-chat/views.py
+Powerbuilder — demo auth + pipeline views.
 
-Auth views for Powerbuilder.
+Demo authentication uses a single shared password stored in the environment.
+Add to your .env file:
+    DEMO_PASSWORD=your_secure_password_here
 
-Flow
-----
-Registration:
-  1. User submits email + password.
-  2. Extract email domain → look up or create Organization.
-  3. Create Django User + UserProfile linked to that org.
-  4. Log the user in and store org_namespace in the session.
-  # TODO: add email-verification step here before activating the account.
-  #       Use Django's PasswordResetForm token machinery or a third-party
-  #       package (django-allauth, dj-rest-auth) to send a confirmation link.
-  #       Until verified, set user.is_active = False and activate on click.
-
-Login:
-  1. Authenticate with Django's built-in auth.
-  2. Refresh org_namespace in the session (catches domain changes by admin).
-  3. Redirect to the chat interface.
-
-Logout:
-  1. Flush the session and redirect to login.
-
-Query submission (chat_view):
-  1. Blocked by QueryAuthMiddleware if the user is anonymous.
-  2. Reads org_namespace from the session.
-  3. Passes it into manager_app.invoke() via AgentState.
+Session keys
+------------
+    authenticated       bool  — set to True on successful login
+    conversations       list  — [{id, title, timestamp, messages: [...]}]
+    current_conv_id     str   — UUID of the active conversation
+    org_namespace       str   — Pinecone namespace (default "general")
 """
 
-import json
 import logging
+import os
+import time
+import uuid
 
-from django.contrib.auth import authenticate, login, logout
-from django.contrib.auth.decorators import login_required
-from django.contrib.auth.models import User
-from django.http import JsonResponse
+import markdown as md_lib
+from django.http import Http404, HttpResponse
 from django.shortcuts import redirect, render
 from django.views.decorators.http import require_POST
-
-from .models import Organization, UserProfile
+from functools import wraps
 
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Session key constant — single source of truth used here and in middleware
+# Config
 # ---------------------------------------------------------------------------
 
-SESSION_ORG_NAMESPACE = "org_namespace"
+# Set DEMO_PASSWORD=<value> in .env
+DEMO_PASSWORD    = os.environ.get("DEMO_PASSWORD", "")
+UPLOAD_DIR       = "data/uploads"
+EXPORTS_DIR      = "exports"
+MAX_CONVERSATIONS = 20
 
+_ALLOWED_DOWNLOAD_EXTS = {".docx", ".csv"}
 
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
-
-def _domain_from_email(email: str) -> str:
-    """Extract the domain part of an email address."""
-    return email.strip().lower().split("@")[-1]
-
-
-def _set_org_session(request, user: User) -> str:
-    """
-    Resolve the user's Pinecone namespace and write it to the session.
-    Returns the namespace string.
-    """
-    try:
-        profile = user.profile
-        namespace = profile.pinecone_namespace
-    except UserProfile.DoesNotExist:
-        namespace = "general"
-
-    request.session[SESSION_ORG_NAMESPACE] = namespace
-    return namespace
+_MD_EXTENSIONS = ["tables", "fenced_code", "nl2br"]
 
 
 # ---------------------------------------------------------------------------
-# Registration
+# Auth decorator
 # ---------------------------------------------------------------------------
 
-def register_view(request):
-    """
-    GET  → render registration form.
-    POST → create User + UserProfile + Organization, log in, redirect.
-    """
-    if request.user.is_authenticated:
-        return redirect("chat")
-
-    if request.method == "GET":
-        return render(request, "chat/register.html")
-
-    # -- POST ----------------------------------------------------------------
-    email    = request.POST.get("email", "").strip().lower()
-    username = request.POST.get("username", "").strip()
-    password = request.POST.get("password", "")
-    confirm  = request.POST.get("password_confirm", "")
-
-    errors = []
-
-    if not email or "@" not in email:
-        errors.append("A valid email address is required.")
-    if not username:
-        errors.append("Username is required.")
-    if len(password) < 8:
-        errors.append("Password must be at least 8 characters.")
-    if password != confirm:
-        errors.append("Passwords do not match.")
-    if User.objects.filter(username=username).exists():
-        errors.append("That username is already taken.")
-    if User.objects.filter(email=email).exists():
-        errors.append("An account with that email already exists.")
-
-    if errors:
-        return render(request, "chat/register.html", {"errors": errors})
-
-    # Create the Django user
-    user = User.objects.create_user(
-        username=username,
-        email=email,
-        password=password,
-    )
-
-    # Resolve org from email domain
-    domain = _domain_from_email(email)
-    org    = Organization.get_or_create_for_domain(domain)
-
-    # Create the profile linking user to org
-    UserProfile.objects.create(user=user, organization=org)
-
-    # TODO: email-verification gate — set user.is_active = False here,
-    #       send confirmation link, and only activate on token redemption.
-    #       For the prototype we activate immediately.
-
-    # Log the user in
-    login(request, user)
-    _set_org_session(request, user)
-
-    logger.info(
-        "New user registered: %s | org: %s | namespace: %s",
-        username, org.name, org.pinecone_namespace,
-    )
-
-    return redirect("chat")
+def demo_login_required(view_func):
+    """Redirect to /login/ if the session is not authenticated."""
+    @wraps(view_func)
+    def _wrapped(request, *args, **kwargs):
+        if not request.session.get("authenticated"):
+            return redirect("login")
+        return view_func(request, *args, **kwargs)
+    return _wrapped
 
 
 # ---------------------------------------------------------------------------
-# Login
+# Login / logout
 # ---------------------------------------------------------------------------
 
 def login_view(request):
     """
     GET  → render login form.
-    POST → authenticate, refresh session namespace, redirect.
+    POST → check DEMO_PASSWORD, set session, redirect to chat.
     """
-    if request.user.is_authenticated:
+    if request.session.get("authenticated"):
         return redirect("chat")
 
     if request.method == "GET":
-        return render(request, "chat/login.html")
+        return render(request, "login.html")
 
-    # -- POST ----------------------------------------------------------------
-    username = request.POST.get("username", "").strip()
     password = request.POST.get("password", "")
 
-    user = authenticate(request, username=username, password=password)
+    if DEMO_PASSWORD and password == DEMO_PASSWORD:
+        request.session["authenticated"] = True
+        request.session["org_namespace"] = "general"
+        return redirect("chat")
 
-    if user is None:
-        return render(
-            request,
-            "chat/login.html",
-            {"error": "Invalid username or password."},
-        )
-
-    if not user.is_active:
-        # TODO: redirect to a "check your email" page once email verification
-        #       is implemented (see register_view TODO above).
-        return render(
-            request,
-            "chat/login.html",
-            {"error": "This account is not yet active."},
-        )
-
-    login(request, user)
-    namespace = _set_org_session(request, user)
-
-    logger.info(
-        "User logged in: %s | namespace: %s", username, namespace
+    error = (
+        "Incorrect password."
+        if DEMO_PASSWORD
+        else "DEMO_PASSWORD is not configured — set it in your .env file."
     )
+    return render(request, "login.html", {"error": error})
 
-    next_url = request.GET.get("next", "chat")
-    return redirect(next_url)
-
-
-# ---------------------------------------------------------------------------
-# Logout
-# ---------------------------------------------------------------------------
 
 def logout_view(request):
-    logout(request)
+    request.session.flush()
     return redirect("login")
 
 
 # ---------------------------------------------------------------------------
-# Chat / query view
+# Chat page
 # ---------------------------------------------------------------------------
 
-@login_required(login_url="login")
+@demo_login_required
 def chat_view(request):
     """
-    GET  → render the chat UI.
-    POST → run a query through the manager pipeline and return JSON.
+    Renders the chat UI.
 
-    org_namespace is read from the session (set at login/registration).
-    It is never trusted from the POST body to prevent namespace spoofing.
+    Query parameters (GET):
+        ?new=1       — start a new conversation (clears current_conv_id)
+        ?conv=<id>   — switch to an existing conversation by ID
     """
-    if request.method == "GET":
-        return render(request, "chat/chat.html")
+    if request.GET.get("new"):
+        request.session["current_conv_id"] = None
+        request.session.modified = True
+        return redirect("chat")
 
-    return _handle_query(request)
+    if conv_id := request.GET.get("conv"):
+        request.session["current_conv_id"] = conv_id
+        request.session.modified = True
+        return redirect("chat")
+
+    conversations  = request.session.get("conversations", [])
+    current_id     = request.session.get("current_conv_id")
+    current_messages: list = []
+
+    if current_id:
+        conv = next((c for c in conversations if c["id"] == current_id), None)
+        if conv:
+            current_messages = conv.get("messages", [])
+
+    return render(request, "chat.html", {
+        "conversations":    conversations,
+        "current_messages": current_messages,
+        "current_conv_id":  current_id,
+    })
 
 
-@login_required(login_url="login")
+# ---------------------------------------------------------------------------
+# Send message (HTMX endpoint)
+# ---------------------------------------------------------------------------
+
+@demo_login_required
 @require_POST
-def query_view(request):
+def send_message_view(request):
     """
-    Dedicated JSON endpoint for AJAX query submission.
-    Separated from chat_view so the UI can POST without a full page reload.
+    Accepts a query (and optional file upload), runs it through the pipeline,
+    stores the result in the session, and returns a rendered HTMX partial
+    (templates/partials/message.html) containing the assistant message bubble.
     """
-    return _handle_query(request)
-
-
-def _handle_query(request):
-    """
-    Shared query execution logic.
-
-    Reads org_namespace from the session — never from the request body.
-    Injects it into AgentState so all downstream Pinecone calls are scoped
-    to the correct namespace automatically.
-    """
-    try:
-        body      = json.loads(request.body)
-        query     = body.get("query", "").strip()
-        out_fmt   = body.get("output_format", "markdown")
-    except (json.JSONDecodeError, AttributeError):
-        return JsonResponse({"error": "Invalid JSON body."}, status=400)
-
+    query = request.POST.get("query", "").strip()
     if not query:
-        return JsonResponse({"error": "Query cannot be empty."}, status=400)
+        return render(request, "partials/message.html", {"error": "Query cannot be empty."})
 
-    # Pull namespace from session — set at login, never from untrusted input
-    org_namespace = request.session.get(SESSION_ORG_NAMESPACE, "general")
+    # ── File upload ──────────────────────────────────────────────────────────
+    uploaded_file_path = None
+    uploaded_file = request.FILES.get("file")
+    if uploaded_file:
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+        # Sanitise filename: keep alphanumerics + safe punctuation, collapse the rest
+        raw_name  = uploaded_file.name or "upload"
+        safe_name = "".join(c if (c.isalnum() or c in "._-") else "_" for c in raw_name)
+        filename  = f"{int(time.time())}_{safe_name}"
+        dest      = os.path.join(UPLOAD_DIR, filename)
+        with open(dest, "wb") as fh:
+            for chunk in uploaded_file.chunks():
+                fh.write(chunk)
+        uploaded_file_path = dest
 
-    # Enforce read-only for 'general' namespace: ingestor will refuse to write
-    # (ingestor_node checks state["org_namespace"] == "general" and early-returns)
-    is_readonly = (org_namespace == "general")
-
+    # ── Pipeline ─────────────────────────────────────────────────────────────
     try:
-        # Import here to avoid circular imports at module load time
-        from .agents.manager import run_query
+        from .agents.manager import run_query  # deferred import to avoid circular
 
         result = run_query(
-            query=query,
-            org_namespace=org_namespace,
-            output_format=out_fmt,
+            query            = query,
+            org_namespace    = request.session.get("org_namespace", "general"),
+            uploaded_file_path = uploaded_file_path,
         )
+    except Exception as exc:
+        logger.exception("Pipeline error: %s", exc)
+        return render(request, "partials/message.html", {"error": f"Pipeline error: {exc}"})
 
-        return JsonResponse({
-            "final_answer":        result.get("final_answer", ""),
-            "active_agents":       result.get("active_agents", []),
-            "errors":              result.get("errors", []),
-            "generated_file_path": result.get("generated_file_path"),
-            "org_namespace":       org_namespace,
-            "readonly":            is_readonly,
-        })
+    final_answer        = result.get("final_answer", "")
+    active_agents       = result.get("active_agents", [])
+    generated_file_path = result.get("generated_file_path")
+    errors              = result.get("errors", [])
 
-    except Exception as e:
-        logger.exception("Pipeline error for user %s: %s", request.user.username, e)
-        return JsonResponse({"error": f"Pipeline error: {e}"}, status=500)
+    # ── Markdown → HTML ───────────────────────────────────────────────────────
+    answer_html = md_lib.markdown(final_answer, extensions=_MD_EXTENSIONS)
+
+    # ── Download metadata ─────────────────────────────────────────────────────
+    download_filename = None
+    download_label    = None
+    if generated_file_path:
+        download_filename = os.path.basename(generated_file_path)
+        if download_filename.endswith(".docx"):
+            download_label = "Download Word Doc"
+        elif download_filename.endswith(".csv"):
+            download_label = "Download CSV"
+        else:
+            download_filename = None  # don't offer download for unknown types
+
+    # ── Session history ───────────────────────────────────────────────────────
+    conversations = request.session.get("conversations", [])
+    current_id    = request.session.get("current_conv_id")
+
+    # Find the active conversation, or create a new one
+    conv = next((c for c in conversations if c["id"] == current_id), None) if current_id else None
+    if conv is None:
+        current_id = str(uuid.uuid4())
+        conv = {
+            "id":        current_id,
+            "title":     query[:40],
+            "timestamp": time.strftime("%Y-%m-%d %H:%M"),
+            "messages":  [],
+        }
+        conversations.insert(0, conv)
+        conversations = conversations[:MAX_CONVERSATIONS]
+        request.session["current_conv_id"] = current_id
+
+    conv["messages"].append({"role": "user", "content": query})
+    conv["messages"].append({
+        "role":              "assistant",
+        "content":           final_answer,
+        "answer_html":       answer_html,
+        "active_agents":     active_agents,
+        "generated_file_path": generated_file_path,
+        "download_filename": download_filename,
+        "download_label":    download_label,
+        "errors":            errors,
+    })
+
+    request.session["conversations"] = conversations
+    request.session.modified = True
+
+    return render(request, "partials/message.html", {
+        "answer_html":       answer_html,
+        "active_agents":     active_agents,
+        "download_filename": download_filename,
+        "download_label":    download_label,
+        "errors":            errors,
+    })
+
+
+# ---------------------------------------------------------------------------
+# File download
+# ---------------------------------------------------------------------------
+
+@demo_login_required
+def download_view(request, filename: str):
+    """
+    Serves a file from the exports/ directory as an attachment.
+    Only .docx and .csv extensions are permitted; path traversal is rejected.
+    """
+    # Security checks
+    if "/" in filename or "\\" in filename or ".." in filename:
+        raise Http404
+
+    ext = os.path.splitext(filename)[1].lower()
+    if ext not in _ALLOWED_DOWNLOAD_EXTS:
+        raise Http404
+
+    filepath = os.path.join(EXPORTS_DIR, filename)
+    if not os.path.isfile(filepath):
+        raise Http404
+
+    with open(filepath, "rb") as fh:
+        content = fh.read()
+
+    content_types = {
+        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        ".csv":  "text/csv",
+    }
+    response = HttpResponse(content, content_type=content_types[ext])
+    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    return response

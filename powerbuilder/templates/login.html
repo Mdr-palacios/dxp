@@ -1,0 +1,142 @@
+{% extends "base.html" %}
+{% block title %}Sign in — Powerbuilder{% endblock %}
+
+{% block content %}
+<div style="
+  flex: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem 1rem;
+  background: var(--bg-secondary);
+">
+  <div style="
+    width: 100%;
+    max-width: 380px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 16px;
+    padding: 2.5rem 2rem;
+  ">
+
+    <!-- Logo + title -->
+    <div style="text-align:center; margin-bottom:1.75rem;">
+      <div style="
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        width: 48px; height: 48px;
+        background: var(--accent-glow);
+        border: 1px solid rgba(59,130,246,0.3);
+        border-radius: 12px;
+        margin-bottom: 1rem;
+      ">
+        <svg width="26" height="26" viewBox="0 0 20 20" fill="none">
+          <rect width="20" height="20" rx="5" fill="var(--accent)"/>
+          <path d="M5 14V6h4.5a2.5 2.5 0 0 1 0 5H5m0-5v5m0 0v3" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M11 14l3-8 3 8" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+          <path d="M12 11.5h4" stroke="#fff" stroke-width="1.4" stroke-linecap="round"/>
+        </svg>
+      </div>
+      <h1 style="color:var(--accent); font-size:1.4rem; font-weight:700; letter-spacing:-0.02em; margin:0 0 0.4rem;">
+        Powerbuilder
+      </h1>
+      <p style="color:var(--text-secondary); font-size:0.8rem; margin:0; line-height:1.5;">
+        All the data, all the strategy —<br>so you can focus on winning.
+      </p>
+    </div>
+
+    <!-- Error message -->
+    {% if error %}
+    <div style="
+      background: rgba(239,68,68,0.08);
+      border: 1px solid rgba(239,68,68,0.4);
+      color: var(--error);
+      border-radius: 8px;
+      padding: 0.65rem 0.875rem;
+      font-size: 0.8rem;
+      margin-bottom: 1.25rem;
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+    ">
+      <svg width="14" height="14" viewBox="0 0 16 16" fill="none" style="flex-shrink:0;">
+        <circle cx="8" cy="8" r="7" stroke="currentColor" stroke-width="1.5"/>
+        <path d="M8 5v3.5M8 11v.5" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      </svg>
+      {{ error }}
+    </div>
+    {% endif %}
+
+    <!-- Login form -->
+    <form method="POST" action="/login/">
+      {% csrf_token %}
+
+      <label style="
+        display: block;
+        color: var(--text-muted);
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.07em;
+        text-transform: uppercase;
+        margin-bottom: 0.4rem;
+      ">Password</label>
+
+      <input
+        type="password"
+        name="password"
+        autofocus
+        autocomplete="current-password"
+        placeholder="Enter access password"
+        style="
+          display: block;
+          width: 100%;
+          background: var(--bg-secondary);
+          border: 1px solid var(--border);
+          color: var(--text-primary);
+          border-radius: 8px;
+          padding: 0.7rem 0.875rem;
+          font-size: 0.875rem;
+          outline: none;
+          transition: border-color 0.15s;
+          margin-bottom: 1rem;
+        "
+        onfocus="this.style.borderColor='var(--accent)'"
+        onblur="this.style.borderColor='var(--border)'"
+      >
+
+      <button
+        type="submit"
+        style="
+          display: block;
+          width: 100%;
+          background: var(--accent);
+          color: #fff;
+          border: none;
+          border-radius: 8px;
+          padding: 0.75rem;
+          font-size: 0.875rem;
+          font-weight: 600;
+          cursor: pointer;
+          transition: background 0.15s;
+        "
+        onmouseover="this.style.background='var(--accent-hover)'"
+        onmouseout="this.style.background='var(--accent)'"
+      >
+        Sign in
+      </button>
+    </form>
+
+    <!-- Footer note -->
+    <p style="
+      color: var(--text-muted);
+      font-size: 0.72rem;
+      text-align: center;
+      margin: 1.5rem 0 0;
+      line-height: 1.5;
+    ">
+      User accounts and org-level login coming soon.
+    </p>
+  </div>
+</div>
+{% endblock %}

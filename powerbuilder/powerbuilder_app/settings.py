@@ -53,6 +53,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'chat',
+    'django_htmx',
 ]
 
 MIDDLEWARE = [
@@ -63,21 +64,22 @@ MIDDLEWARE = [
     'django.contrib.auth.middleware.AuthenticationMiddleware',
     'django.contrib.messages.middleware.MessageMiddleware',
     'django.middleware.clickjacking.XFrameOptionsMiddleware',
+    'django_htmx.middleware.HtmxMiddleware',
     # Blocks unauthenticated POST requests to query endpoints with HTTP 401
     'chat.middleware.QueryAuthMiddleware',
 ]
 
 # Auth redirects
-LOGIN_URL = '/auth/login/'
+LOGIN_URL = '/login/'
 LOGIN_REDIRECT_URL = '/chat/'
-LOGOUT_REDIRECT_URL = '/auth/login/'
+LOGOUT_REDIRECT_URL = '/login/'
 
 ROOT_URLCONF = 'powerbuilder_app.urls'
 
 TEMPLATES = [
     {
         'BACKEND': 'django.template.backends.django.DjangoTemplates',
-        'DIRS': [],
+        'DIRS': [BASE_DIR / 'templates'],
         'APP_DIRS': True,
         'OPTIONS': {
             'context_processors': [
