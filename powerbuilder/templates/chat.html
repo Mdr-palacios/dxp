@@ -86,6 +86,10 @@
     max-width: 720px;
     margin: 0 auto;
   }
+  /* When at least one assistant row carries a plan panel, widen the thread */
+  /* so the bubble doesn't get squeezed. Falls back gracefully on browsers  */
+  /* without :has() since the default 720px still works.                    */
+  .chat-thread:has(.plan-panel) { max-width: 980px; }
   .msg-row { margin-bottom: 1.25rem; display: flex; }
   .msg-row.user  { justify-content: flex-end; }
   .msg-row.asst  { justify-content: flex-start; }
@@ -157,6 +161,287 @@
     padding: 0.25rem 0 0.25rem 0.875rem; color: var(--text-muted); font-style: italic;
   }
 
+  /* ── Source cards (Milestone A) ─────────────────────────────── */
+  .sources-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.75rem;
+  }
+  .source-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.4rem 0.65rem;
+    font-size: 0.72rem;
+    max-width: 100%;
+    transition: border-color 0.12s, background 0.12s;
+  }
+  .source-card:hover { border-color: rgba(59,130,246,0.4); background: rgba(59,130,246,0.05); }
+  .source-card[open] { background: rgba(59,130,246,0.06); border-color: rgba(59,130,246,0.35); }
+  .source-card-summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    cursor: pointer;
+    list-style: none;
+    color: var(--text-secondary);
+  }
+  .source-card-summary::-webkit-details-marker { display: none; }
+  .source-card-title { color: var(--text-primary); font-weight: 600; }
+  .source-card-date  { color: var(--text-muted); font-size: 0.68rem; }
+  .source-card-preview {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    line-height: 1.55;
+    margin: 0.5rem 0 0;
+    white-space: pre-wrap;
+  }
+
+  /* ── C3-safe disclosure footer ──────────────────────────────── */
+  .c3-footer {
+    margin-top: 0.75rem;
+    padding-top: 0.6rem;
+    border-top: 1px dashed var(--border);
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    font-style: italic;
+  }
+
+  /* Plan panel (Milestone D: split view) */
+  /* On plan runs the assistant row holds two siblings: the answer bubble   */
+  /* and a compact outline panel. They share the row, so we narrow the      */
+  /* bubble and let the panel anchor on the right.                          */
+  .msg-row.asst:has(.plan-panel) { align-items: flex-start; gap: 0.65rem; }
+  .bubble-asst--with-panel { max-width: calc(100% - 240px); }
+
+  .plan-panel {
+    flex: 0 0 224px;
+    align-self: flex-start;
+    background: rgba(59,130,246,0.05);
+    border: 1px solid rgba(59,130,246,0.22);
+    border-radius: 14px;
+    padding: 0.7rem 0.8rem 0.85rem;
+    font-size: 0.74rem;
+    color: var(--text-secondary);
+    position: sticky;
+    top: 64px;
+    max-height: calc(100vh - 96px);
+    overflow: hidden auto;
+    transition: flex-basis 0.18s ease, padding 0.18s ease;
+  }
+  .plan-panel-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 0.55rem;
+  }
+  .plan-panel-eyebrow {
+    color: var(--accent);
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+  }
+  .plan-panel-toggle {
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 6px;
+    color: var(--text-muted);
+    padding: 2px 5px;
+    cursor: pointer;
+    line-height: 0;
+    transition: transform 0.18s ease, color 0.12s, border-color 0.12s;
+  }
+  .plan-panel-toggle:hover { color: var(--text-primary); border-color: rgba(255,255,255,0.18); }
+  .plan-panel.is-collapsed { flex-basis: 36px; padding: 0.55rem 0.45rem; }
+  .plan-panel.is-collapsed .plan-panel-eyebrow,
+  .plan-panel.is-collapsed .plan-panel-nav,
+  .plan-panel.is-collapsed .plan-panel-meta { display: none; }
+  .plan-panel.is-collapsed .plan-panel-toggle { transform: rotate(180deg); }
+
+  .plan-panel-nav { margin: 0 0 0.7rem; }
+  .plan-panel-nav ul { list-style: none; padding: 0; margin: 0; }
+  .plan-panel-nav-item { margin: 0.05rem 0; }
+  .plan-panel-nav-item--lvl2 { padding-left: 0.65rem; }
+  .plan-panel-nav-item--lvl3 { padding-left: 1.25rem; font-size: 0.7rem; }
+  .plan-panel-nav-item a {
+    display: block;
+    color: var(--text-secondary);
+    text-decoration: none;
+    padding: 0.18rem 0.4rem;
+    border-radius: 6px;
+    border-left: 2px solid transparent;
+    line-height: 1.35;
+    transition: background 0.12s, color 0.12s, border-color 0.12s;
+  }
+  .plan-panel-nav-item a:hover {
+    background: rgba(59,130,246,0.08);
+    color: var(--text-primary);
+    border-left-color: var(--accent);
+  }
+  .plan-panel-nav-item--lvl1 a { color: var(--text-primary); font-weight: 600; }
+
+  .plan-panel-meta {
+    border-top: 1px dashed rgba(255,255,255,0.08);
+    padding-top: 0.55rem;
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+  }
+  .plan-panel-meta-row { display: flex; flex-direction: column; gap: 0.3rem; }
+  .plan-panel-meta-label {
+    color: var(--text-muted);
+    font-size: 0.62rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+  }
+  .plan-panel-meta-pills { display: flex; flex-wrap: wrap; gap: 0.25rem; }
+  .plan-panel-pill {
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 999px;
+    padding: 1px 7px;
+    font-size: 0.65rem;
+    color: var(--text-secondary);
+  }
+  .plan-panel-meta-stats {
+    display: flex;
+    gap: 0.6rem;
+    color: var(--text-muted);
+    font-size: 0.7rem;
+  }
+  .plan-panel-stat strong { color: var(--text-primary); font-weight: 600; margin-right: 0.15rem; }
+
+  /* Anchor highlight: when nav jumps to a heading we briefly tint it. */
+  .prose-dark h1.is-target,
+  .prose-dark h2.is-target,
+  .prose-dark h3.is-target {
+    background: rgba(59,130,246,0.12);
+    box-shadow: -3px 0 0 var(--accent);
+    padding-left: 0.45rem;
+    border-radius: 2px;
+    transition: background 0.6s ease, box-shadow 0.6s ease;
+  }
+
+  /* Edit-and-rerun (Milestone D) */
+  /* The user bubble row gains a small Edit affordance that fades in on    */
+  /* hover. Click loads the query back into the textarea and arms rerun   */
+  /* mode so the next submit replaces the prior assistant reply.          */
+  .msg-row.user { align-items: center; gap: 0.4rem; }
+  .bubble-edit-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.08);
+    color: var(--text-muted);
+    border-radius: 999px;
+    padding: 3px 9px;
+    font-size: 0.7rem;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity 0.15s ease, color 0.12s, border-color 0.12s, background 0.12s;
+  }
+  .msg-row.user:hover .bubble-edit-btn,
+  .bubble-edit-btn:focus-visible { opacity: 1; }
+  .bubble-edit-btn:hover {
+    color: var(--text-primary);
+    border-color: rgba(59,130,246,0.4);
+    background: rgba(59,130,246,0.08);
+  }
+  .bubble-edit-btn svg { flex-shrink: 0; }
+
+  /* Rerun-mode chip lives above the input bar so the operator knows the */
+  /* next submit will replace, not append.                               */
+  .rerun-chip {
+    display: none;
+    align-items: center;
+    gap: 0.4rem;
+    background: rgba(245,158,11,0.1);
+    border: 1px solid rgba(245,158,11,0.35);
+    color: #f59e0b;
+    border-radius: 999px;
+    padding: 3px 10px 3px 9px;
+    font-size: 0.72rem;
+    margin: 0 auto 0.45rem;
+    width: fit-content;
+  }
+  .rerun-chip.is-active { display: inline-flex; }
+  .rerun-chip-dot {
+    width: 6px; height: 6px;
+    border-radius: 50%;
+    background: #f59e0b;
+  }
+  .rerun-chip-clear {
+    background: transparent;
+    border: none;
+    color: inherit;
+    cursor: pointer;
+    padding: 0;
+    margin-left: 0.15rem;
+    font-size: 0.85rem;
+    line-height: 1;
+  }
+  .rerun-chip-clear:hover { color: var(--text-primary); }
+
+  /* ── Live trace strip (streaming) ───────────────────────────── */
+  /* Replaces the dot bubble during a streaming run. Shows the agent           */
+  /* currently working plus a compact timeline of agents already done.         */
+  #trace-strip { display: none; max-width: 720px; margin: 0 auto 1rem; }
+  .trace-bubble {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 4px 18px 18px 18px;
+    padding: 0.7rem 1rem;
+  }
+  .trace-current {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    font-size: 0.82rem;
+    color: var(--text-primary);
+  }
+  .trace-spinner {
+    width: 12px; height: 12px;
+    border: 2px solid rgba(59,130,246,0.25);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: trace-spin 0.85s linear infinite;
+    flex-shrink: 0;
+  }
+  @keyframes trace-spin { to { transform: rotate(360deg); } }
+  .trace-history {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+  }
+  .trace-step {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    background: rgba(34,197,94,0.08);
+    color: #4ade80;
+    border: 1px solid rgba(34,197,94,0.25);
+    border-radius: 999px;
+    font-size: 0.68rem;
+    padding: 2px 8px;
+  }
+  .trace-step::before {
+    content: "✓";
+    font-weight: 700;
+  }
+  .trace-step.errored {
+    background: rgba(239,68,68,0.07);
+    color: #f87171;
+    border-color: rgba(239,68,68,0.3);
+  }
+  .trace-step.errored::before { content: "⚠"; }
+
   /* ── Agent pills ────────────────────────────────────────────── */
   .agents-row {
     display: flex;
@@ -192,6 +477,79 @@
     transition: background 0.15s;
   }
   .btn-download:hover { background: var(--accent-glow); }
+
+  /* Download cards: typed thumbnail badge, label, filename, arrow */
+  .dl-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.7rem;
+  }
+  .dl-card {
+    --dl-color: #6b7280;
+    display: inline-flex;
+    align-items: center;
+    gap: 0.65rem;
+    padding: 0.5rem 0.7rem 0.5rem 0.5rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    text-decoration: none;
+    color: var(--text-secondary);
+    transition: border-color 0.15s, transform 0.12s, background 0.15s;
+    min-width: 220px;
+    max-width: 320px;
+  }
+  .dl-card:hover {
+    border-color: var(--dl-color);
+    transform: translateY(-1px);
+  }
+  .dl-card:focus-visible {
+    outline: 2px solid var(--dl-color);
+    outline-offset: 2px;
+  }
+  .dl-thumb {
+    flex: none;
+    width: 38px; height: 38px;
+    display: flex; align-items: center; justify-content: center;
+    border-radius: 8px;
+    background: color-mix(in srgb, var(--dl-color) 14%, transparent);
+    color: var(--dl-color);
+    border: 1px solid color-mix(in srgb, var(--dl-color) 28%, transparent);
+    font-size: 0.62rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .dl-meta {
+    display: flex;
+    flex-direction: column;
+    gap: 0.1rem;
+    min-width: 0;
+    flex: 1 1 auto;
+  }
+  .dl-label {
+    font-size: 0.78rem;
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .dl-filename {
+    font-size: 0.68rem;
+    color: var(--text-muted);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  }
+  .dl-arrow {
+    flex: none;
+    color: var(--text-muted);
+    transition: color 0.15s, transform 0.12s;
+  }
+  .dl-card:hover .dl-arrow { color: var(--dl-color); transform: translateY(1px); }
 
   /* ── Typing indicator ───────────────────────────────────────── */
   #typing-indicator {
@@ -310,27 +668,239 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    height: 100%;
+    justify-content: flex-start;
+    min-height: 100%;
     text-align: center;
-    padding: 2rem;
+    padding: 2.25rem 1.5rem 3rem;
     color: var(--text-muted);
+    gap: 1.25rem;
+  }
+  .empty-hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    max-width: 560px;
+  }
+  .empty-hero-icon {
+    width: 44px; height: 44px;
+    border-radius: 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--accent);
+    margin-bottom: 0.25rem;
   }
   .empty-state h2 {
-    color: var(--text-secondary);
-    font-size: 1.1rem;
+    color: var(--text-primary, var(--text-secondary));
+    font-size: 1.15rem;
     font-weight: 600;
-    margin: 1rem 0 0.4rem;
+    margin: 0.25rem 0 0.15rem;
+    letter-spacing: -0.01em;
   }
-  .empty-state p { font-size: 0.82rem; line-height: 1.6; max-width: 320px; }
+  .empty-subtitle {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    line-height: 1.55;
+    max-width: 460px;
+    margin: 0;
+  }
+  .empty-hint {
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    margin: 0.25rem 0 0;
+    opacity: 0.85;
+  }
+
+  /* Demo carousel: 5 prompt tiles, responsive grid */
+  .demo-carousel {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.75rem;
+    width: 100%;
+    max-width: 920px;
+    margin: 0.25rem auto 0;
+  }
+  .demo-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+    text-align: left;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 0.85rem 0.95rem 0.95rem;
+    color: inherit;
+    cursor: pointer;
+    transition: border-color 0.15s, transform 0.12s, background 0.15s;
+    font: inherit;
+  }
+  .demo-tile:hover {
+    border-color: var(--accent);
+    transform: translateY(-1px);
+  }
+  .demo-tile:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .demo-tile-chip {
+    display: inline-block;
+    font-size: 0.66rem;
+    font-weight: 600;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    padding: 0.18rem 0.5rem;
+    border-radius: 999px;
+    border: 1px solid transparent;
+  }
+  .demo-tile-chip--plan { background: rgba(59, 130, 246, 0.12); color: #3b82f6; border-color: rgba(59, 130, 246, 0.28); }
+  .demo-tile-chip--win  { background: rgba(34, 197, 94, 0.12); color: #22c55e; border-color: rgba(34, 197, 94, 0.28); }
+  .demo-tile-chip--opp  { background: rgba(239, 68, 68, 0.12); color: #ef4444; border-color: rgba(239, 68, 68, 0.28); }
+  .demo-tile-chip--lang { background: rgba(168, 85, 247, 0.12); color: #a855f7; border-color: rgba(168, 85, 247, 0.28); }
+  .demo-tile-chip--vf   { background: rgba(245, 158, 11, 0.14); color: #d97706; border-color: rgba(245, 158, 11, 0.30); }
+  .demo-tile-headline {
+    font-size: 0.86rem;
+    font-weight: 600;
+    line-height: 1.35;
+    color: var(--text-secondary);
+  }
+  .demo-tile-preview {
+    font-size: 0.76rem;
+    line-height: 1.5;
+    color: var(--text-muted);
+  }
+
+  /* Voter file chip (demo mode only): persistent affordance above input */
+  .vf-chip-row {
+    display: flex;
+    justify-content: center;
+    margin: 0 0 0.5rem;
+  }
+  .vf-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.5rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.32rem 0.7rem 0.32rem 0.55rem;
+    font-size: 0.74rem;
+    color: var(--text-muted);
+    line-height: 1.2;
+  }
+  .vf-chip-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #22c55e;
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.55);
+    animation: vf-chip-pulse 2.4s ease-in-out infinite;
+    flex: none;
+  }
+  .vf-chip-strong { color: var(--text-secondary); font-weight: 600; }
+  @keyframes vf-chip-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.45); }
+    50%      { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
+  }
 
   /* ── HTMX loading indicator on send btn ─────────────────────── */
   .htmx-request .send-btn { background: var(--text-muted); cursor: not-allowed; }
+
+  /* Mobile sidebar toggle: hidden checkbox + hamburger label, slideout drawer */
+  #sidebar-toggle { display: none; }  /* checkbox is purely a state holder */
+  .sidebar-hamburger {
+    display: none;
+    position: fixed;
+    top: 60px;        /* below the 52px nav with a small gap */
+    left: 10px;
+    z-index: 30;
+    width: 36px; height: 36px;
+    border-radius: 8px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    color: var(--text-secondary);
+    cursor: pointer;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 1px 3px rgba(0,0,0,0.25);
+  }
+  .sidebar-scrim {
+    display: none;
+    position: fixed;
+    inset: 52px 0 0 0;
+    background: rgba(0,0,0,0.45);
+    z-index: 18;
+  }
+
+  /* Mobile responsive: collapse sidebar to drawer, tighten thread spacing */
+  @media (max-width: 768px) {
+    .chat-root { position: relative; }
+    .sidebar-hamburger { display: inline-flex; }
+
+    /* Sidebar becomes a slideout drawer triggered by the hamburger checkbox */
+    .sidebar {
+      position: fixed;
+      top: 52px; left: 0; bottom: 0;
+      width: 78%;
+      max-width: 320px;
+      z-index: 20;
+      transform: translateX(-100%);
+      transition: transform 0.22s ease;
+      box-shadow: 2px 0 18px rgba(0,0,0,0.35);
+    }
+    #sidebar-toggle:checked ~ .chat-root .sidebar { transform: translateX(0); }
+    #sidebar-toggle:checked ~ .chat-root .sidebar-scrim { display: block; }
+
+    /* Tighten thread + input bar for narrow screens. Top padding leaves */
+    /* room for the floating hamburger button so the first message is not */
+    /* hidden underneath it. Hamburger spans top:60px..96px (36px tall);  */
+    /* 4.5rem (~72px) of top padding plus the 52px nav clears it cleanly. */
+    .chat-scroll { padding: 4.5rem 0.85rem 0.85rem; }
+    .chat-thread { max-width: 100%; }
+    .input-bar { padding-left: 0.85rem; padding-right: 0.85rem; }
+    .bubble-user, .bubble-asst { max-width: 90%; font-size: 0.83rem; }
+
+    /* Carousel: tighter gaps + tile padding on phones */
+    .demo-carousel { gap: 0.55rem; }
+    .empty-state { padding: 1.5rem 1rem 2.25rem; gap: 1rem; }
+
+    /* Voter chip wraps gracefully if line gets tight */
+    .vf-chip { font-size: 0.7rem; padding: 0.28rem 0.6rem 0.28rem 0.5rem; }
+
+    /* Download cards: full-width stacks on phones for tap-friendly targets */
+    .dl-card { min-width: 0; max-width: 100%; flex: 1 1 100%; }
+
+    /* Plan panel (Milestone D): on phones it stacks under the bubble       */
+    /* instead of holding a side rail. The :has() selector keeps the row    */
+    /* wrapping into two stacked rows.                                      */
+    .msg-row.asst:has(.plan-panel) {
+      flex-wrap: wrap;
+      gap: 0.5rem;
+    }
+    .bubble-asst--with-panel { max-width: 100%; }
+    .plan-panel {
+      flex: 1 1 100%;
+      position: static;
+      max-height: none;
+      top: auto;
+    }
+    /* Edit button stays visible on touch devices since hover is not a thing */
+    .bubble-edit-btn { opacity: 0.85; }
+  }
 </style>
 {% endblock %}
 
 {% block content %}
+{# Mobile drawer state: a hidden checkbox toggles the sidebar via :checked. #}
+{# The hamburger label flips it; the scrim closes it on outside click.     #}
+<input type="checkbox" id="sidebar-toggle" aria-hidden="true">
+<label for="sidebar-toggle" class="sidebar-hamburger" aria-label="Toggle conversation list" role="button">
+  <svg width="18" height="18" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+    <path d="M2 4h12M2 8h12M2 12h12" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+  </svg>
+</label>
 <div class="chat-root">
+  <label for="sidebar-toggle" class="sidebar-scrim" aria-hidden="true"></label>
 
   <!-- ══════════════════════════════ SIDEBAR ═══════════════════════════════ -->
   <aside class="sidebar">
@@ -380,13 +950,19 @@
         {% if current_messages %}
           {% for msg in current_messages %}
             {% if msg.role == "user" %}
-            <div class="msg-row user">
-              <div class="bubble-user">{{ msg.content }}</div>
+            <div class="msg-row user"{% if msg.msg_id %} data-msg-id="{{ msg.msg_id }}"{% endif %}>
+              <div class="bubble-user" data-query="{{ msg.content }}">{{ msg.content }}</div>
+              <button type="button" class="bubble-edit-btn" data-action="edit-rerun" data-query="{{ msg.content }}" title="Edit and rerun" aria-label="Edit and rerun">
+                <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                  <path d="M11.5 2.5l2 2L5 13l-2.5.5.5-2.5 8.5-8.5z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>
+                </svg>
+                <span>Edit</span>
+              </button>
             </div>
 
             {% else %}
-            <div class="msg-row asst">
-              <div class="bubble-asst">
+            <div class="msg-row asst"{% if msg.bubble_id %} data-bubble-id="{{ msg.bubble_id }}"{% endif %}>
+              <div class="bubble-asst{% if msg.outline.show_panel %} bubble-asst--with-panel{% endif %}"{% if msg.bubble_id %} id="{{ msg.bubble_id }}"{% endif %}>
                 <div class="prose-dark">
                   {% if msg.answer_html %}
                     {{ msg.answer_html|safe }}
@@ -403,38 +979,136 @@
                 </div>
                 {% endif %}
 
-                {% if msg.generated_file_path %}
-                <div>
-                  <a href="/download/{{ msg.generated_filename }}/" class="btn-download">
-                    <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+                {% if msg.downloads %}
+                <div class="dl-row" role="list" aria-label="Downloads">
+                  {% for d in msg.downloads %}
+                  <a href="/download/{{ d.filename }}/" class="dl-card" role="listitem"
+                     {% if d.thumb_color %}style="--dl-color: {{ d.thumb_color }};"{% endif %}>
+                    <span class="dl-thumb" aria-hidden="true">{{ d.thumb_kind|default:"FILE" }}</span>
+                    <span class="dl-meta">
+                      <span class="dl-label">{{ d.label }}</span>
+                      <span class="dl-filename" title="{{ d.filename }}">{{ d.filename }}</span>
+                    </span>
+                    <svg class="dl-arrow" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
                       <path d="M8 2v8m0 0l-3-3m3 3l3-3M3 13h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
                     </svg>
-                    {{ msg.download_label }}
+                  </a>
+                  {% endfor %}
+                </div>
+                {% elif msg.generated_file_path %}
+                <div class="dl-row" role="list" aria-label="Downloads">
+                  <a href="/download/{{ msg.generated_filename }}/" class="dl-card" role="listitem">
+                    <span class="dl-thumb" aria-hidden="true">FILE</span>
+                    <span class="dl-meta">
+                      <span class="dl-label">{{ msg.download_label }}</span>
+                      <span class="dl-filename" title="{{ msg.generated_filename }}">{{ msg.generated_filename }}</span>
+                    </span>
+                    <svg class="dl-arrow" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <path d="M8 2v8m0 0l-3-3m3 3l3-3M3 13h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
                   </a>
                 </div>
                 {% endif %}
               </div>
+
+              {# Plan panel (Milestone D), restored from session for plan runs. #}
+              {% if msg.outline.show_panel %}
+              <aside class="plan-panel" aria-label="Plan outline" data-bubble-target="{{ msg.bubble_id }}">
+                <header class="plan-panel-head">
+                  <span class="plan-panel-eyebrow">Plan outline</span>
+                  <button type="button" class="plan-panel-toggle" aria-label="Collapse plan outline" data-action="toggle-panel">
+                    <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+                      <path d="M5 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                    </svg>
+                  </button>
+                </header>
+                {% if msg.outline.sections %}
+                <nav class="plan-panel-nav" aria-label="Sections">
+                  <ul>
+                    {% for section in msg.outline.sections %}
+                    <li class="plan-panel-nav-item plan-panel-nav-item--lvl{{ section.level }}">
+                      <a href="#{{ msg.bubble_id }}-{{ section.slug }}" data-action="jump-section">{{ section.text }}</a>
+                    </li>
+                    {% endfor %}
+                  </ul>
+                </nav>
+                {% endif %}
+                <div class="plan-panel-meta">
+                  {% if msg.outline.agents %}
+                  <div class="plan-panel-meta-row">
+                    <span class="plan-panel-meta-label">Agents</span>
+                    <div class="plan-panel-meta-pills">
+                      {% for a in msg.outline.agents %}<span class="plan-panel-pill">{{ a }}</span>{% endfor %}
+                    </div>
+                  </div>
+                  {% endif %}
+                  <div class="plan-panel-meta-stats">
+                    <span class="plan-panel-stat"><strong>{{ msg.outline.source_count }}</strong> sources</span>
+                    <span class="plan-panel-stat"><strong>{{ msg.outline.download_count }}</strong> downloads</span>
+                  </div>
+                </div>
+              </aside>
+              {% endif %}
             </div>
             {% endif %}
           {% endfor %}
 
         {% else %}
-          <!-- Empty state -->
+          {# Restructured empty state (Milestone B): tighter hero, then a   #}
+          {# carousel of 5 demo prompts that exercise different agent paths #}
+          {# (full plan, win-number, opposition, multilingual, voter file). #}
+          {# Tiles pre-fill the textarea but never auto-submit, so the      #}
+          {# operator can edit live before sending. #}
           <div class="empty-state" id="empty-state">
-            <div style="
-              width:52px; height:52px;
-              background:var(--accent-glow);
-              border:1px solid rgba(59,130,246,0.25);
-              border-radius:14px;
-              display:flex; align-items:center; justify-content:center;
-            ">
-              <svg width="26" height="26" viewBox="0 0 20 20" fill="none">
-                <rect width="20" height="20" rx="5" fill="var(--accent)"/>
-                <path d="M7 16.5V3.5a5.5 4 0 0 1 0 8" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
+            <div class="empty-hero">
+              <div class="empty-hero-icon" aria-hidden="true">
+                <svg width="22" height="22" viewBox="0 0 20 20" fill="none">
+                  <rect width="20" height="20" rx="5" fill="var(--accent)"/>
+                  <path d="M7 16.5V3.5a5.5 4 0 0 1 0 8" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+                </svg>
+              </div>
+              <h2>What can I help you win?</h2>
+              <p class="empty-subtitle">Pick a starter below or ask your own question.</p>
             </div>
-            <h2>What can I help you win?</h2>
-            <p>Ask about win numbers, target precincts, opposition research, messaging, or upload a voter file to get started.</p>
+
+            <div class="demo-carousel" role="list" aria-label="Demo prompts">
+              <button type="button" class="demo-tile" role="listitem"
+                data-prompt="Build a Gwinnett County GOTV plan targeting Latinx voters age 18 to 35. Generate a Spanish door-knock script and give me a CSV of the target list.">
+                <span class="demo-tile-chip demo-tile-chip--plan">Full plan</span>
+                <span class="demo-tile-headline">Gwinnett GOTV, Latinx 18 to 35</span>
+                <span class="demo-tile-preview">Spanish door-knock script and a CSV target list.</span>
+              </button>
+
+              <button type="button" class="demo-tile" role="listitem"
+                data-prompt="What is the win number for Georgia's 7th Congressional District in a midterm cycle? Show me the math.">
+                <span class="demo-tile-chip demo-tile-chip--win">Win number</span>
+                <span class="demo-tile-headline">Win number for GA-07, midterm</span>
+                <span class="demo-tile-preview">Quick lookup, shows CVAP and turnout math.</span>
+              </button>
+
+              <button type="button" class="demo-tile" role="listitem"
+                data-prompt="Pull opposition research on the Republican candidate in Georgia's 6th Congressional District. Give me the top vulnerabilities and three contrast messaging angles.">
+                <span class="demo-tile-chip demo-tile-chip--opp">Opposition</span>
+                <span class="demo-tile-headline">GOP opponent in GA-06</span>
+                <span class="demo-tile-preview">Vulnerabilities and contrast angles from research books.</span>
+              </button>
+
+              <button type="button" class="demo-tile" role="listitem"
+                data-prompt="Draft a Vietnamese-language text message to AAPI voters in Gwinnett about early voting locations and hours.">
+                <span class="demo-tile-chip demo-tile-chip--lang">Multilingual</span>
+                <span class="demo-tile-headline">Vietnamese text to AAPI voters</span>
+                <span class="demo-tile-preview">Tests language detection plus messaging agent.</span>
+              </button>
+
+              <button type="button" class="demo-tile" role="listitem"
+                data-prompt="Segment my voter file by age cohort and party, then match each segment to the right canvassing script and turnout tactic.">
+                <span class="demo-tile-chip demo-tile-chip--vf">Voter file</span>
+                <span class="demo-tile-headline">Segment my list and match scripts</span>
+                <span class="demo-tile-preview">Uses the attached synthetic voterfile in demo mode.</span>
+              </button>
+            </div>
+
+            <p class="empty-hint">Loads into the input box. Edit anything, then hit send.</p>
           </div>
         {% endif %}
 
@@ -453,11 +1127,42 @@
         </div>
       </div>
 
+      <!-- Live trace strip (Milestone A: streaming agent trace) -->
+      <div id="trace-strip" aria-live="polite">
+        <div class="msg-row asst">
+          <div class="trace-bubble">
+            <div class="trace-current">
+              <span class="trace-spinner" aria-hidden="true"></span>
+              <span id="trace-current-label">Starting</span>
+            </div>
+            <div class="trace-history" id="trace-history"></div>
+          </div>
+        </div>
+      </div>
+
     </div><!-- .chat-scroll -->
 
     <!-- ── Input bar ───────────────────────────────────────────── -->
     <div class="input-bar">
       <div class="input-inner">
+
+        {% if DEMO_MODE %}
+        {# Demo mode shows a persistent voterfile chip so the audience knows  #}
+        {# segmentation queries are running against real (synthetic) data.    #}
+        <div class="vf-chip-row" aria-live="polite">
+          <span class="vf-chip" title="Synthetic Gwinnett County voterfile, attached for the duration of the demo">
+            <span class="vf-chip-dot" aria-hidden="true"></span>
+            <span><span class="vf-chip-strong">Synthetic voterfile</span>, 50K Gwinnett rows attached</span>
+          </span>
+        </div>
+        {% endif %}
+
+        {# Rerun chip (Milestone D): shown after clicking Edit on a user bubble. #}
+        <div id="rerun-chip" class="rerun-chip" aria-live="polite">
+          <span class="rerun-chip-dot" aria-hidden="true"></span>
+          <span>Editing &mdash; submit will rerun and replace the previous response.</span>
+          <button type="button" id="rerun-clear" class="rerun-chip-clear" aria-label="Cancel edit">×</button>
+        </div>
 
         <form
           id="chat-form"
@@ -465,17 +1170,22 @@
           hx-post="/send/"
           hx-target="#messages"
           hx-swap="beforeend"
+          hx-trigger="send-via-htmx"
         >
           {% csrf_token %}
+          {% if not DEMO_MODE %}
           <input type="file" id="file-input" name="file" class="hidden" accept=".csv,.xlsx,.pdf" aria-label="Attach file">
+          {% endif %}
 
           <div class="input-box">
+            {% if not DEMO_MODE %}
             <!-- Paperclip -->
             <button type="button" class="input-icon-btn" onclick="document.getElementById('file-input').click()" title="Attach file (.csv, .xlsx, .pdf)" aria-label="Attach file">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
               </svg>
             </button>
+            {% endif %}
 
             <!-- Text input -->
             <textarea
@@ -496,12 +1206,14 @@
           </div>
         </form>
 
+        {% if not DEMO_MODE %}
         <!-- File badge -->
         <div id="file-badge">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
           <span id="file-name-label"></span>
           <button onclick="clearFile()" title="Remove file">×</button>
         </div>
+        {% endif %}
 
         <p style="color:var(--text-muted); font-size:0.7rem; text-align:center; margin:0.5rem 0 0;">
           Powerbuilder analyzes your query using live Census, FEC, and election data.
@@ -530,6 +1242,11 @@
     d.appendChild(document.createTextNode(text));
     return d.innerHTML;
   }
+  function escapeAttr(text) {
+    // For data-* attribute values rendered into an HTML string. Escape both
+    // the HTML special chars and the attribute quote character.
+    return escapeHtml(text).replace(/"/g, '&quot;');
+  }
 
   /* ── Auto-resize textarea ─────────────────────────────────────── */
   const textarea = document.getElementById('message-input');
@@ -538,6 +1255,19 @@
     textarea.style.height = Math.min(textarea.scrollHeight, 96) + 'px';
   }
   textarea.addEventListener('input', autoResize);
+
+  /* ── Responsive placeholder ───────────────────────────────────── */
+  /* The full placeholder wraps onto two lines on narrow phones and the   */
+  /* second line gets clipped under the rounded input box. Swap to a      */
+  /* shorter version below 480px so it fits one line cleanly.             */
+  const _PLACEHOLDER_LONG = textarea.getAttribute('placeholder') || '';
+  const _PLACEHOLDER_SHORT = 'Ask about your district\u2026';
+  function syncPlaceholder() {
+    const narrow = window.matchMedia('(max-width: 480px)').matches;
+    textarea.setAttribute('placeholder', narrow ? _PLACEHOLDER_SHORT : _PLACEHOLDER_LONG);
+  }
+  syncPlaceholder();
+  window.addEventListener('resize', syncPlaceholder);
 
   /* ── Enter to send (Shift+Enter = newline) ─────────────────────── */
   textarea.addEventListener('keydown', function (e) {
@@ -550,56 +1280,216 @@
   });
 
   /* ── File input ────────────────────────────────────────────────── */
-  document.getElementById('file-input').addEventListener('change', function () {
-    const file = this.files[0];
-    const badge = document.getElementById('file-badge');
-    if (file) {
-      document.getElementById('file-name-label').textContent = file.name;
-      badge.style.display = 'flex';
-    }
-  });
+  // Demo mode hides the file input entirely. Guard against missing elements
+  // so the script does not throw when the input is absent.
+  const fileInput = document.getElementById('file-input');
+  if (fileInput) {
+    fileInput.addEventListener('change', function () {
+      const file = this.files[0];
+      const badge = document.getElementById('file-badge');
+      if (file && badge) {
+        document.getElementById('file-name-label').textContent = file.name;
+        badge.style.display = 'flex';
+      }
+    });
+  }
 
   window.clearFile = function () {
-    document.getElementById('file-input').value = '';
-    document.getElementById('file-badge').style.display = 'none';
+    const fi = document.getElementById('file-input');
+    if (fi) fi.value = '';
+    const badge = document.getElementById('file-badge');
+    if (badge) badge.style.display = 'none';
   };
 
   /* ── Saved query — injected into HTMX request after form serialization ── */
   let _pendingQuery = '';
 
-  /* ── Form submit — validation + immediate user bubble ──────────── */
+  /* Edit-and-rerun state (Milestone D). _rerunMode flips when an Edit       */
+  /* button is clicked, _rerunPriorUserRow points at the .msg-row.user that  */
+  /* owns the edited query so we can splice out it + the assistant reply.    */
+  let _rerunMode = false;
+  let _rerunPriorUserRow = null;
+
+  function setRerunMode(active, priorRow) {
+    _rerunMode = !!active;
+    _rerunPriorUserRow = active ? (priorRow || null) : null;
+    const chip = document.getElementById('rerun-chip');
+    if (chip) chip.classList.toggle('is-active', _rerunMode);
+  }
+
+  /* ── Streaming run state (Milestone A: SSE agent trace) ──────────── */
+  let _activeStream = null;  // current EventSource, if any
+
+  function showTrace() {
+    document.getElementById('typing-indicator').style.display = 'none';
+    const strip = document.getElementById('trace-strip');
+    document.getElementById('trace-current-label').textContent = 'Starting';
+    document.getElementById('trace-history').innerHTML = '';
+    strip.style.display = 'block';
+  }
+  function hideTrace() {
+    document.getElementById('trace-strip').style.display = 'none';
+  }
+  function setTraceCurrent(label) {
+    document.getElementById('trace-current-label').textContent = label || 'Working';
+  }
+  function pushTraceStep(label, errored) {
+    const history = document.getElementById('trace-history');
+    const step = document.createElement('span');
+    step.className = errored ? 'trace-step errored' : 'trace-step';
+    step.textContent = label;
+    history.appendChild(step);
+  }
+
+  /* ── Form submit — SSE-first, falls back to HTMX when a file is attached ── */
+  // The form has hx-trigger="send-via-htmx" so HTMX never fires on a normal
+  // submit; we route to SSE by default, and dispatch the HTMX trigger only
+  // when a file is attached (SSE is GET-only and can't carry uploads).
   document.getElementById('chat-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+
     const query = textarea.value.trim();
     if (!query) {
-      e.preventDefault();    // also prevents HTMX from firing
       textarea.focus();
       return;
     }
 
-    // Save before clearing — HTMX reads from textarea at document-level (after us),
-    // so it would see '' if we clear here. We inject the real value in configRequest.
+    const fi = document.getElementById('file-input');
+    const hasFile = fi && fi.files && fi.files.length > 0;
+
     _pendingQuery = query;
 
     // Remove empty-state placeholder once we start chatting
     const emptyState = document.getElementById('empty-state');
     if (emptyState) emptyState.remove();
 
-    // Append user bubble immediately (before server responds)
+    // Rerun mode (Milestone D): if Edit was clicked on an earlier query, strip
+    // that user row + every msg-row that follows (the prior assistant + any
+    // others) before appending the new user bubble. Result reads as
+    // user(edited) -> assistant(new) without an orphan stale reply.
     const messages = document.getElementById('messages');
+    if (_rerunMode && _rerunPriorUserRow) {
+      let cur = _rerunPriorUserRow.nextElementSibling;
+      while (cur && cur.classList.contains('msg-row')) {
+        const next = cur.nextElementSibling;
+        cur.remove();
+        cur = next;
+      }
+      _rerunPriorUserRow.remove();
+      _rerunPriorUserRow = null;
+    }
+
+    // Append user bubble immediately, with an Edit affordance attached.
     const row = document.createElement('div');
     row.className = 'msg-row user';
-    row.innerHTML = '<div class="bubble-user">' + escapeHtml(query) + '</div>';
+    row.innerHTML =
+      '<div class="bubble-user" data-query="' + escapeAttr(query) + '">' + escapeHtml(query) + '</div>' +
+      '<button type="button" class="bubble-edit-btn" data-action="edit-rerun" data-query="' +
+      escapeAttr(query) + '" title="Edit and rerun" aria-label="Edit and rerun">' +
+      '<svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">' +
+      '<path d="M11.5 2.5l2 2L5 13l-2.5.5.5-2.5 8.5-8.5z" stroke="currentColor" stroke-width="1.4" stroke-linejoin="round"/>' +
+      '</svg><span>Edit</span></button>';
     messages.appendChild(row);
 
-    // Show typing indicator
-    document.getElementById('typing-indicator').style.display = 'block';
-
-    // Reset textarea (HTMX will get the value from _pendingQuery via configRequest)
+    // Reset textarea + clear rerun chip now that the new submit is in flight.
     textarea.value = '';
     textarea.style.height = 'auto';
-
+    setRerunMode(false);
     scrollToBottom();
+
+    if (hasFile) {
+      // File-upload fallback: HTMX POST to /send/.
+      document.getElementById('typing-indicator').style.display = 'block';
+      htmx.trigger('#chat-form', 'send-via-htmx');
+      scrollToBottom();
+      return;
+    }
+
+    startStream(query);
   });
+
+  function startStream(query) {
+    if (_activeStream) {
+      try { _activeStream.close(); } catch (e) { /* noop */ }
+      _activeStream = null;
+    }
+    showTrace();
+    scrollToBottom();
+
+    const url = '/stream/?query=' + encodeURIComponent(query);
+    const es = new EventSource(url);
+    _activeStream = es;
+    let _gotDone = false;
+
+    es.onmessage = function (msgEvent) {
+      let data;
+      try { data = JSON.parse(msgEvent.data); } catch (err) { return; }
+      if (!data || !data.type) return;
+
+      switch (data.type) {
+        case 'hello':
+          break;
+        case 'ping':
+          break;  // heartbeat, no UI change
+        case 'agent_start':
+          setTraceCurrent(data.label || data.agent || 'Working');
+          break;
+        case 'agent_done':
+          if (data.label) pushTraceStep(data.label, false);
+          break;
+        case 'agent_error':
+          pushTraceStep(data.label || ((data.agent || 'agent') + ' failed'), true);
+          break;
+        case 'done':
+          _gotDone = true;
+          finishStream(data);
+          break;
+        case 'error':
+          _gotDone = true;
+          finishStreamWithError(data.label || 'Server error');
+          break;
+      }
+    };
+
+    es.onerror = function () {
+      // Browsers fire onerror when the server closes the connection too,
+      // so only treat it as fatal if we never received a done frame.
+      if (_activeStream === es && !_gotDone) {
+        finishStreamWithError('Connection lost — please try again.');
+      }
+    };
+  }
+
+  function finishStream(data) {
+    if (_activeStream) {
+      try { _activeStream.close(); } catch (e) { /* noop */ }
+      _activeStream = null;
+    }
+    hideTrace();
+    if (data && data.html) {
+      const messages = document.getElementById('messages');
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = data.html;
+      while (wrapper.firstChild) messages.appendChild(wrapper.firstChild);
+    }
+    _pendingQuery = '';
+    scrollToBottom();
+  }
+
+  function finishStreamWithError(label) {
+    if (_activeStream) {
+      try { _activeStream.close(); } catch (e) { /* noop */ }
+      _activeStream = null;
+    }
+    hideTrace();
+    const messages = document.getElementById('messages');
+    const errRow = document.createElement('div');
+    errRow.className = 'msg-row asst';
+    errRow.innerHTML = '<div class="bubble-error">⚠ ' + escapeHtml(label) + '</div>';
+    messages.appendChild(errRow);
+    _pendingQuery = '';
+    scrollToBottom();
+  }
 
   /* ── Inject saved query into request params (fires after form serialization) ── */
   htmx.on('htmx:configRequest', function (evt) {
@@ -636,6 +1526,76 @@
       messages.appendChild(errRow);
       scrollToBottom();
     }
+  });
+
+  /* Plan panel + edit-rerun delegated handler (Milestone D). One listener   */
+  /* covers every assistant bubble — streamed, HTMX-swapped, or restored —   */
+  /* via [data-action] dispatch so future affordances slot in cleanly.       */
+  document.getElementById('messages').addEventListener('click', function (e) {
+    const trigger = e.target.closest('[data-action]');
+    if (!trigger) return;
+    const action = trigger.dataset.action;
+
+    if (action === 'toggle-panel') {
+      const panel = trigger.closest('.plan-panel');
+      if (panel) panel.classList.toggle('is-collapsed');
+      return;
+    }
+
+    if (action === 'jump-section') {
+      e.preventDefault();
+      const href = trigger.getAttribute('href') || '';
+      const id = href.startsWith('#') ? href.slice(1) : '';
+      if (!id) return;
+      const target = document.getElementById(id);
+      if (!target) return;
+      // Scroll inside chat-scroll so the input bar doesn't hide the heading.
+      const chatScroll = document.getElementById('chat-scroll');
+      const targetTop = target.getBoundingClientRect().top - chatScroll.getBoundingClientRect().top;
+      chatScroll.scrollBy({ top: targetTop - 12, behavior: 'smooth' });
+      // Brief highlight so the operator sees where the jump landed.
+      document.querySelectorAll('.prose-dark .is-target').forEach(function (el) { el.classList.remove('is-target'); });
+      target.classList.add('is-target');
+      setTimeout(function () { target.classList.remove('is-target'); }, 1400);
+      return;
+    }
+
+    if (action === 'edit-rerun') {
+      const query = trigger.dataset.query || '';
+      if (!query) return;
+      const userRow = trigger.closest('.msg-row.user');
+      textarea.value = query;
+      autoResize();
+      textarea.focus();
+      textarea.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      setRerunMode(true, userRow);
+      return;
+    }
+  });
+
+  // Cancel button on the rerun chip clears the mode without sending.
+  var rerunClear = document.getElementById('rerun-clear');
+  if (rerunClear) {
+    rerunClear.addEventListener('click', function () {
+      setRerunMode(false);
+      textarea.focus();
+    });
+  }
+
+  /* ── Demo carousel loader ────────────────────────────────────── */
+  // Each .demo-tile carries its prompt in data-prompt. Click pre-fills the
+  // textarea and focuses it. Intentionally does NOT auto-submit, so the
+  // operator can edit live before sending ("swap Latinx for AAPI", etc).
+  document.querySelectorAll('.demo-tile').forEach(function (tile) {
+    tile.addEventListener('click', function () {
+      const promptText = (tile.dataset.prompt || '').trim();
+      if (!promptText) return;
+      textarea.value = promptText;
+      autoResize();
+      textarea.focus();
+      // Scroll the textarea into view in case the empty state pushed it off-screen.
+      textarea.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
   });
 
   /* ── Scroll to bottom on initial load ─────────────────────────── */

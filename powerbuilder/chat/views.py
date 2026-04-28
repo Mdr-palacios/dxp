@@ -14,16 +14,32 @@ Session keys
     org_namespace       str   — Pinecone namespace (default "general")
 """
 
+import json
 import logging
 import os
+import threading
 import time
 import uuid
 
 import markdown as md_lib
-from django.http import Http404, HttpResponse
+from django.conf import settings
+from django.http import Http404, HttpResponse, StreamingHttpResponse
 from django.shortcuts import redirect, render
+from django.template.loader import render_to_string
 from django.views.decorators.http import require_POST
 from functools import wraps
+
+from . import progress
+from .render_helpers import (
+    extract_sources,
+    is_plan_run,
+    c3_footer_text,
+    agent_pill_label,
+    auto_title,
+    enrich_downloads,
+    plan_outline,
+    prefix_heading_ids,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -39,7 +55,9 @@ MAX_CONVERSATIONS = 20
 
 _ALLOWED_DOWNLOAD_EXTS = {".docx", ".csv", ".xlsx"}
 
-_MD_EXTENSIONS = ["tables", "fenced_code", "nl2br"]
+# 'toc' adds id="slug" attributes to headings so the plan-panel side rail
+# (Milestone D) can deep-link to a section with #slug.
+_MD_EXTENSIONS = ["tables", "fenced_code", "nl2br", "toc"]
 
 
 # ---------------------------------------------------------------------------
@@ -161,6 +179,18 @@ def send_message_view(request):
                 fh.write(chunk)
         uploaded_file_path = dest
 
+    # ── DEMO_MODE: auto-attach the synthetic Gwinnett voterfile ──────────────
+    # When the upload UI is hidden (DEMO_MODE is on) the operator cannot attach
+    # a voterfile through the chat. We auto-attach the curated synthetic file
+    # so the voterfile + export agents can run and produce a CSV target list.
+    # Real uploads (when DEMO_MODE is off) take precedence over the demo file.
+    if uploaded_file_path is None and getattr(settings, "DEMO_MODE", False):
+        demo_voterfile = os.path.join(
+            settings.BASE_DIR, "data", "demo", "gwinnett_demo_voterfile.csv"
+        )
+        if os.path.exists(demo_voterfile):
+            uploaded_file_path = demo_voterfile
+
     # ── Pipeline ─────────────────────────────────────────────────────────────
     try:
         from .agents.manager import run_query  # deferred import to avoid circular
@@ -181,24 +211,48 @@ def send_message_view(request):
     generated_file_path = result.get("generated_file_path")
     errors              = result.get("errors", [])
 
+    # Bubble id (Milestone D): used to namespace heading anchors so side-panel
+    # nav links jump to the right bubble even when multiple plans share section
+    # titles. Also used as the data-attr the edit-and-rerun JS targets.
+    bubble_id = "b-" + uuid.uuid4().hex[:10]
+
     # ── Markdown → HTML ───────────────────────────────────────────────────────
     answer_html = md_lib.markdown(final_answer, extensions=_MD_EXTENSIONS)
+    answer_html = prefix_heading_ids(answer_html, bubble_id)
+
+    # ── Source cards + plan-run flag (Milestone A: visible intelligence) ─────
+    source_cards = extract_sources(result.get("research_results") or [])
+    is_plan      = is_plan_run(active_agents)
+    c3_footer    = c3_footer_text() if is_plan else None
 
     # ── Download metadata ─────────────────────────────────────────────────────
-    generated_filename = None
-    download_label     = None
-    if generated_file_path:
-        generated_filename = os.path.basename(generated_file_path)
-        ext = os.path.splitext(generated_filename)[1].lower()
-        if ext == ".docx":
-            download_label = "Download Word Doc"
-        elif ext == ".csv":
-            download_label = "Download CSV"
-        elif ext == ".xlsx":
-            download_label = "Download Excel"
-        else:
-            generated_file_path = None
-            generated_filename  = None
+    # Build a list of downloads, one entry per generated file. Plans return both
+    # a DOCX and a CSV target list; single-topic answers usually return one or none.
+    # Older callers may only set generated_file_path, so we fall back to that.
+    generated_files = result.get("generated_files") or (
+        [generated_file_path] if generated_file_path else []
+    )
+    _label_by_ext = {
+        ".docx": "Download Word Doc",
+        ".csv":  "Download CSV",
+        ".xlsx": "Download Excel",
+    }
+    downloads = []
+    for fp in generated_files:
+        if not fp:
+            continue
+        fname = os.path.basename(fp)
+        ext   = os.path.splitext(fname)[1].lower()
+        label = _label_by_ext.get(ext)
+        if not label:
+            continue
+        downloads.append({"filename": fname, "label": label})
+
+    # Backward-compatible single-file fields (first download, if any).
+    generated_filename = downloads[0]["filename"] if downloads else None
+    download_label     = downloads[0]["label"]    if downloads else None
+    if not downloads:
+        generated_file_path = None
 
     # ── Session history ───────────────────────────────────────────────────────
     conversations = request.session.get("conversations", [])
@@ -210,7 +264,7 @@ def send_message_view(request):
         current_id = str(uuid.uuid4())
         conv = {
             "id":        current_id,
-            "title":     query[:40],
+            "title":     auto_title(query),
             "timestamp": time.strftime("%Y-%m-%d %H:%M"),
             "messages":  [],
         }
@@ -218,7 +272,20 @@ def send_message_view(request):
         conversations = conversations[:MAX_CONVERSATIONS]
         request.session["current_conv_id"] = current_id
 
-    conv["messages"].append({"role": "user", "content": query})
+    # Enrich downloads with thumbnail metadata so both the live render and
+    # session-restored history can show typed badges without re-running this.
+    downloads = enrich_downloads(downloads)
+
+    # Build the plan-panel outline (Milestone D). Cheap to compute, gated
+    # on is_plan_run, so single-topic answers get an empty/no-show payload
+    # and the template skips the side panel entirely.
+    outline = plan_outline(final_answer, active_agents, source_cards, downloads)
+
+    conv["messages"].append({
+        "role":     "user",
+        "content":  query,
+        "msg_id":   uuid.uuid4().hex[:10],   # for edit-and-rerun targeting
+    })
     conv["messages"].append({
         "role":                "assistant",
         "content":             final_answer,
@@ -227,7 +294,12 @@ def send_message_view(request):
         "generated_file_path": generated_file_path,
         "generated_filename":  generated_filename,
         "download_label":      download_label,
+        "downloads":           downloads,
+        "source_cards":        source_cards,
+        "c3_footer":           c3_footer,
         "errors":              errors,
+        "outline":             outline,
+        "bubble_id":           bubble_id,
     })
 
     request.session["conversations"] = conversations
@@ -239,8 +311,235 @@ def send_message_view(request):
         "generated_file_path": generated_file_path,
         "generated_filename":  generated_filename,
         "download_label":      download_label,
+        "downloads":           downloads,
+        "source_cards":        source_cards,
+        "c3_footer":           c3_footer,
         "errors":              errors,
+        "outline":             outline,
+        "bubble_id":           bubble_id,
     })
+
+
+# ---------------------------------------------------------------------------
+# Streaming endpoint (Milestone A: visible intelligence)
+# ---------------------------------------------------------------------------
+#
+# The browser opens an EventSource against /stream/?query=... and watches the
+# pipeline run live. The agent worker runs on a background thread and pushes
+# progress events onto an in-process queue. The generator below drains that
+# queue, formats each event as SSE, and emits a final "done" event with the
+# rendered HTML once the worker finishes. No Redis, no extra deps.
+#
+# Why one connection (not two): a separate /send/ + /events/ pair would force
+# us to share the run's final state across requests, which without Redis means
+# global dicts that race. Streaming the result back on the same connection
+# keeps the lifetime of the run scoped to one HTTP request.
+
+def _format_sse(event_dict: dict) -> str:
+    """Serialize a payload as a single SSE ``data:`` frame."""
+    return f"data: {json.dumps(event_dict, ensure_ascii=False)}\n\n"
+
+
+@demo_login_required
+def stream_query_view(request):
+    """
+    SSE endpoint that runs the pipeline and streams agent progress in real
+    time. The final "done" event carries the rendered HTML the chat UI swaps
+    into the message thread, so a single request covers both the live trace
+    and the final answer.
+
+    Query parameters (GET):
+        query — the user's prompt (required)
+
+    File uploads are not supported on this endpoint; the existing /send/
+    HTMX path remains for upload flows. Demo mode auto-attaches the synthetic
+    voterfile here too, mirroring /send/.
+    """
+    query = request.GET.get("query", "").strip()
+    if not query:
+        return HttpResponse("query parameter required", status=400)
+
+    org_namespace = request.session.get("org_namespace", "general")
+
+    # Demo mode: auto-attach the synthetic Gwinnett voterfile so the voterfile
+    # and export agents can run end-to-end without a real upload.
+    uploaded_file_path = None
+    if getattr(settings, "DEMO_MODE", False):
+        demo_voterfile = os.path.join(
+            settings.BASE_DIR, "data", "demo", "gwinnett_demo_voterfile.csv"
+        )
+        if os.path.exists(demo_voterfile):
+            uploaded_file_path = demo_voterfile
+
+    run_id = progress.new_run_id()
+    progress.create(run_id)
+
+    # Holders the worker writes into; the generator reads them after the run
+    # is signalled done. Using a dict keeps it picklable-free and obvious.
+    holder: dict = {"result": None, "error": None}
+
+    def _worker():
+        try:
+            from .agents.manager import run_query_streaming  # deferred import
+            holder["result"] = run_query_streaming(
+                query              = query,
+                org_namespace      = org_namespace,
+                run_id             = run_id,
+                uploaded_file_path = uploaded_file_path,
+            )
+        except Exception as exc:
+            logger.exception("Streaming pipeline error: %s", exc)
+            holder["error"] = str(exc)
+        finally:
+            # Tell the consumer the run is done so the drain loop can exit.
+            progress.emit(run_id, "run_finished")
+
+    worker_thread = threading.Thread(target=_worker, daemon=True)
+
+    def _event_stream():
+        # Initial frame so the EventSource ``onopen`` settles before we run.
+        yield _format_sse({"type": "hello", "run_id": run_id})
+        worker_thread.start()
+        try:
+            for evt in progress.drain(run_id):
+                # The wrapper signals completion via run_finished, which we do
+                # not forward; we exit the loop and emit a final ``done`` frame
+                # carrying the rendered HTML.
+                if evt.type == "run_finished":
+                    break
+                yield _format_sse(evt.to_dict())
+
+            # Wait for the worker to finish (almost always already done by
+            # the time run_finished arrived; this is just paranoia for slow
+            # interpreters).
+            worker_thread.join(timeout=5.0)
+
+            if holder["error"]:
+                yield _format_sse({"type": "error", "label": holder["error"]})
+                return
+
+            result = holder["result"] or {}
+            payload = _build_done_payload(request, query, result)
+            yield _format_sse(payload)
+        finally:
+            progress.finish(run_id)
+
+    response = StreamingHttpResponse(_event_stream(), content_type="text/event-stream")
+    response["Cache-Control"]    = "no-cache"
+    response["X-Accel-Buffering"] = "no"   # disable proxy buffering on Render/nginx
+    return response
+
+
+def _build_done_payload(request, query: str, result: dict) -> dict:
+    """
+    Render the final assistant bubble HTML from a completed pipeline result
+    and persist the message into the user's session, mirroring the
+    side-effects of ``send_message_view`` so reloads show the same history.
+    """
+    final_answer        = result.get("final_answer", "")
+    active_agents       = result.get("active_agents", [])
+    generated_file_path = result.get("generated_file_path")
+    errors              = result.get("errors", [])
+
+    bubble_id = "b-" + uuid.uuid4().hex[:10]
+    answer_html  = md_lib.markdown(final_answer, extensions=_MD_EXTENSIONS)
+    answer_html  = prefix_heading_ids(answer_html, bubble_id)
+    source_cards = extract_sources(result.get("research_results") or [])
+    is_plan      = is_plan_run(active_agents)
+    c3_footer    = c3_footer_text() if is_plan else None
+
+    generated_files = result.get("generated_files") or (
+        [generated_file_path] if generated_file_path else []
+    )
+    _label_by_ext = {
+        ".docx": "Download Word Doc",
+        ".csv":  "Download CSV",
+        ".xlsx": "Download Excel",
+    }
+    downloads = []
+    for fp in generated_files:
+        if not fp:
+            continue
+        fname = os.path.basename(fp)
+        ext   = os.path.splitext(fname)[1].lower()
+        label = _label_by_ext.get(ext)
+        if not label:
+            continue
+        downloads.append({"filename": fname, "label": label})
+
+    generated_filename = downloads[0]["filename"] if downloads else None
+    download_label     = downloads[0]["label"]    if downloads else None
+    if not downloads:
+        generated_file_path = None
+
+    # Attach thumbnail metadata (kind/color) so download cards render with
+    # typed badges in both the live bubble and any session-restored history.
+    downloads = enrich_downloads(downloads)
+
+    # Plan outline for the side panel (Milestone D).
+    outline = plan_outline(final_answer, active_agents, source_cards, downloads)
+
+    bubble_html = render_to_string("partials/message.html", {
+        "answer_html":         answer_html,
+        "active_agents":       active_agents,
+        "generated_file_path": generated_file_path,
+        "generated_filename":  generated_filename,
+        "download_label":      download_label,
+        "downloads":           downloads,
+        "source_cards":        source_cards,
+        "c3_footer":           c3_footer,
+        "errors":              errors,
+        "outline":             outline,
+        "bubble_id":           bubble_id,
+    }, request=request)
+
+    # Persist into the session so refreshes show the same history.
+    conversations = request.session.get("conversations", [])
+    current_id    = request.session.get("current_conv_id")
+    conv = next((c for c in conversations if c["id"] == current_id), None) if current_id else None
+    if conv is None:
+        current_id = str(uuid.uuid4())
+        conv = {
+            "id":        current_id,
+            "title":     auto_title(query),
+            "timestamp": time.strftime("%Y-%m-%d %H:%M"),
+            "messages":  [],
+        }
+        conversations.insert(0, conv)
+        conversations = conversations[:MAX_CONVERSATIONS]
+        request.session["current_conv_id"] = current_id
+
+    conv["messages"].append({
+        "role":     "user",
+        "content":  query,
+        "msg_id":   uuid.uuid4().hex[:10],
+    })
+    conv["messages"].append({
+        "role":                "assistant",
+        "content":             final_answer,
+        "answer_html":         answer_html,
+        "active_agents":       active_agents,
+        "generated_file_path": generated_file_path,
+        "generated_filename":  generated_filename,
+        "download_label":      download_label,
+        "downloads":           downloads,
+        "source_cards":        source_cards,
+        "c3_footer":           c3_footer,
+        "errors":              errors,
+        "outline":             outline,
+        "bubble_id":           bubble_id,
+    })
+    request.session["conversations"] = conversations
+    request.session.modified = True
+
+    return {
+        "type":          "done",
+        "html":          bubble_html,
+        "active_agents": active_agents,
+        "sources_count": len(source_cards),
+        "downloads_count": len(downloads),
+        "plan_panel":    outline.get("show_panel", False),
+    }
 
 
 # ---------------------------------------------------------------------------

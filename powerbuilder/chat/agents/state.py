@@ -23,13 +23,20 @@ class AgentState(TypedDict):
     router_decision: str # this holds the intent
     output_format: Literal["markdown", "csv", "text", "docx", "xlsx"] # define target file type
     demographic_intent: Optional[str]  # set by intent_router via keyword scan; "a+b" for combined demographics
+    language_intent: Optional[str]     # set by intent_router via keyword scan; ISO 639-1 code (e.g. "es", "en", "zh", "vi", "ko")
 
     # -- File Handling --
     uploaded_file_path: Optional[str] # path to new file for ingesting
 
+    # -- Streaming progress --
+    # When set, agent nodes emit progress events to chat.progress for the
+    # streaming view to consume. None for non-streaming runs (tests, CLI).
+    run_id: Optional[str]
+
     # -- Final Output --
     final_answer: str
-    generated_file_path: Optional[str]  # path to generated output file
+    generated_file_path: Optional[str]  # path to primary generated output file (DOCX for plans)
+    generated_files: Optional[List[str]]  # all generated files; for plans this is [DOCX, CSV]
 
     # -- Observability --
     errors: Annotated[List[str], operator.add]        # non-fatal errors from any agent

@@ -4,6 +4,7 @@ load_dotenv()
 from langgraph.graph import StateGraph, END
 from .state import AgentState
 from ..utils.llm_config import get_completion_client
+from ..progress import emit as _emit_progress
 
 from .researcher import research_node
 from .ingestor import ingestor_node
@@ -15,6 +16,53 @@ from .export import export_node
 from .election_results import ElectionAnalystAgent
 from .voterfile_agent import VoterFileAgent
 from .opposition_research import OppositionResearchAgent
+
+
+# ---------------------------------------------------------------------------
+# Progress-instrumented node wrapper
+# ---------------------------------------------------------------------------
+
+# Human-readable labels for each agent node. Streamed to the client so the
+# trace strip reads like a status feed rather than a list of internal IDs.
+_AGENT_LABELS: dict[str, dict[str, str]] = {
+    "researcher":          {"start": "Searching the corpus",        "done": "Sources gathered"},
+    "ingestor":            {"start": "Reading uploaded file",       "done": "File parsed"},
+    "election_results":    {"start": "Pulling election history",    "done": "Election history loaded"},
+    "opposition_research": {"start": "Loading opposition research", "done": "Opposition brief ready"},
+    "win_number":          {"start": "Calculating the win number",  "done": "Win number set"},
+    "precincts":           {"start": "Ranking target precincts",    "done": "Targets ranked"},
+    "messaging":           {"start": "Drafting messaging",          "done": "Scripts drafted"},
+    "cost_calculator":     {"start": "Pricing the plan",            "done": "Budget priced"},
+    "voter_file":          {"start": "Segmenting your voter file",  "done": "Segments built"},
+    "synthesizer":         {"start": "Writing the deliverable",     "done": "Deliverable ready"},
+}
+
+
+def _label(node: str, kind: str) -> str:
+    return _AGENT_LABELS.get(node, {}).get(kind, node.replace("_", " ").title())
+
+
+def _instrument(node_name: str, fn):
+    """
+    Wrap an agent node function so it emits ``agent_start`` before running
+    and ``agent_done`` after. Honors ``state['run_id']`` — when it is unset
+    the wrapper is a no-op pass-through, so non-streaming callers (tests,
+    CLI) see no behavior change.
+    """
+    def wrapped(state):
+        run_id = state.get("run_id") if isinstance(state, dict) else None
+        if run_id:
+            _emit_progress(run_id, "agent_start", agent=node_name, label=_label(node_name, "start"))
+        try:
+            result = fn(state)
+        except Exception as exc:
+            if run_id:
+                _emit_progress(run_id, "agent_error", agent=node_name, label=str(exc))
+            raise
+        if run_id:
+            _emit_progress(run_id, "agent_done", agent=node_name, label=_label(node_name, "done"))
+        return result
+    return wrapped
 
 
 # Define LLM and temperature for workflow
@@ -64,6 +112,43 @@ def _detect_demographic_intent(query: str) -> str:
     if not matches:
         return "default"
     return "+".join(matches)
+
+# Language detection — keyword scan for explicit language requests in the user query.
+# Returns ISO 639-1 codes. "en" is the default when no other language is requested.
+# Supports Spanish, Mandarin, Vietnamese, Korean — the four most common non-English
+# languages spoken at home in Gwinnett County (and broadly in GA-07).
+_LANGUAGE_KEYWORDS = {
+    "es": (
+        "spanish", "en espa\u00f1ol", "en espanol", "espa\u00f1ol",
+        "in spanish", "hispanohablante", "hispanohablantes",
+        "spanish-speaking", "spanish speaking", "spanish-language",
+        "latinx voters", "latino voters", "latina voters",
+    ),
+    "zh": (
+        "mandarin", "chinese", "in chinese", "in mandarin",
+        "chinese-speaking", "mandarin-speaking", "\u4e2d\u6587",
+    ),
+    "vi": (
+        "vietnamese", "in vietnamese", "vietnamese-speaking",
+        "vietnamese-language", "ti\u1ebfng vi\u1ec7t",
+    ),
+    "ko": (
+        "korean", "in korean", "korean-speaking", "korean-language",
+        "\ud55c\uad6d\uc5b4",
+    ),
+}
+
+def _detect_language_intent(query: str) -> str:
+    """
+    Return the ISO 639-1 code of the first non-English language matched in the
+    query. Defaults to "en". Order is deterministic by dict insertion.
+    """
+    q = query.lower()
+    for code, kws in _LANGUAGE_KEYWORDS.items():
+        if any(kw in q for kw in kws):
+            return code
+    return "en"
+
 
 # Keyword-based fast path for voter file queries — avoids an LLM call for clear cases.
 _VOTER_FILE_KEYWORDS = (
@@ -117,6 +202,10 @@ def triage_router(state: AgentState):
 
 # Intent Router / Classification
 def intent_router_node(state: AgentState):
+    # Detect language once — every return path below carries it through state
+    # so downstream agents (messaging in particular) can produce non-English copy.
+    language = _detect_language_intent(state["query"])
+
     # Fast path: skip LLM for unambiguous voter file queries — only when a file
     # is actually present; keyword match alone must not route to voter_file.
     active_agents  = state.get("active_agents", [])
@@ -129,6 +218,7 @@ def intent_router_node(state: AgentState):
             "router_decision":    "voter_file",
             "output_format":      "markdown",
             "demographic_intent": "default",
+            "language_intent":    language,
         }
 
     # Fast path: opposition research queries — run election_results first to get
@@ -140,12 +230,14 @@ def intent_router_node(state: AgentState):
                 "router_decision":    "election_results",
                 "output_format":      "markdown",
                 "demographic_intent": demographic,
+                "language_intent":    language,
             }
         if "opposition_research" not in active_agents:
             return {
                 "router_decision":    "opposition_research",
                 "output_format":      "markdown",
                 "demographic_intent": demographic,
+                "language_intent":    language,
             }
 
     # Fast path: voter file sequence (no district) — after voter_file, force
@@ -153,12 +245,12 @@ def intent_router_node(state: AgentState):
     if "voter_file" in active_agents and not _has_district_reference(state["query"]):
         demographic = _detect_demographic_intent(state["query"])
         if "researcher" not in active_agents:
-            return {"router_decision": "researcher",       "output_format": "markdown", "demographic_intent": demographic}
+            return {"router_decision": "researcher",       "output_format": "markdown", "demographic_intent": demographic, "language_intent": language}
         if "messaging" not in active_agents:
-            return {"router_decision": "messaging",        "output_format": "markdown", "demographic_intent": demographic}
+            return {"router_decision": "messaging",        "output_format": "markdown", "demographic_intent": demographic, "language_intent": language}
         if "cost_calculator" not in active_agents:
-            return {"router_decision": "cost_calculator",  "output_format": "markdown", "demographic_intent": demographic}
-        return     {"router_decision": "finish",           "output_format": "markdown", "demographic_intent": demographic}
+            return {"router_decision": "cost_calculator",  "output_format": "markdown", "demographic_intent": demographic, "language_intent": language}
+        return     {"router_decision": "finish",           "output_format": "markdown", "demographic_intent": demographic, "language_intent": language}
 
     llm = get_model()
 
@@ -232,6 +324,17 @@ def intent_router_node(state: AgentState):
     if decision == "VOTER_FILE" and not state.get("uploaded_file_path"):
         decision = "RESEARCHER"
 
+    # Safety guard: messaging requires research_results to be populated.
+    # If the LLM picked MESSAGING but the researcher has not run yet, force
+    # researcher first. This eliminates the "No research findings in state"
+    # warning observed in the live demo when the LLM router skipped ahead.
+    if (
+        decision == "MESSAGING"
+        and not state.get("research_results")
+        and "researcher" not in active_agents
+    ):
+        decision = "RESEARCHER"
+
     formats = ["CSV", "MARKDOWN", "TEXT"]
     fmt = next((f for f in formats if f in response), "TEXT").lower()
 
@@ -239,6 +342,7 @@ def intent_router_node(state: AgentState):
         "router_decision":    decision.lower(),
         "output_format":      fmt,
         "demographic_intent": _detect_demographic_intent(state["query"]),
+        "language_intent":    language,
     }
 
 # Constructing workflow for user request
@@ -248,17 +352,21 @@ workflow = StateGraph(AgentState)
 workflow.add_node("triage_router", lambda state: state)
 workflow.add_node("intent_router", intent_router_node)
 
-workflow.add_node("researcher", research_node)
-workflow.add_node("ingestor", ingestor_node)
-workflow.add_node("precincts", PrecinctsAgent.run)
-workflow.add_node("win_number", WinNumberAgent.run)
-workflow.add_node("messaging", messaging_node)
-workflow.add_node("cost_calculator", finance_node)
-workflow.add_node("election_results", ElectionAnalystAgent.run)
-workflow.add_node("opposition_research", OppositionResearchAgent.run)
-workflow.add_node("voter_file", VoterFileAgent.run)
+# Each leaf agent is wrapped with ``_instrument`` so it emits start/done
+# progress events to the streaming queue. The wrapper is a no-op when
+# ``state['run_id']`` is unset, so direct ``manager_app.invoke`` callers
+# (tests, CLI) get the original behavior unchanged.
+workflow.add_node("researcher",          _instrument("researcher",          research_node))
+workflow.add_node("ingestor",            _instrument("ingestor",            ingestor_node))
+workflow.add_node("precincts",           _instrument("precincts",           PrecinctsAgent.run))
+workflow.add_node("win_number",          _instrument("win_number",          WinNumberAgent.run))
+workflow.add_node("messaging",           _instrument("messaging",           messaging_node))
+workflow.add_node("cost_calculator",     _instrument("cost_calculator",     finance_node))
+workflow.add_node("election_results",    _instrument("election_results",    ElectionAnalystAgent.run))
+workflow.add_node("opposition_research", _instrument("opposition_research", OppositionResearchAgent.run))
+workflow.add_node("voter_file",          _instrument("voter_file",          VoterFileAgent.run))
 
-workflow.add_node("synthesizer", export_node)
+workflow.add_node("synthesizer", _instrument("synthesizer", export_node))
 
 # workflow.add_node("export", export_node)
 
@@ -358,5 +466,44 @@ def run_query(
         config={"recursion_limit": recursion_limit},
     )
     # Surface the namespace so callers can log/audit which org was served
+    result["org_namespace"] = org_namespace
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Streaming variant
+# ---------------------------------------------------------------------------
+
+def run_query_streaming(
+    query: str,
+    org_namespace: str,
+    run_id: str,
+    output_format: str = "markdown",
+    uploaded_file_path: str | None = None,
+    recursion_limit: int = 50,
+) -> dict:
+    """
+    Streaming variant of ``run_query``. Identical execution path, but the
+    instrumented node wrappers (set up at module load) emit start/done
+    progress events to the ``chat.progress`` queue keyed on ``run_id``.
+    The streaming view drains that queue into an SSE feed for the browser.
+
+    Returns the same final state dict as ``run_query`` once the run
+    completes. If the run raises, the wrapper has already emitted an
+    ``agent_error`` event before the exception propagates.
+    """
+    initial_state: dict = {
+        "query":         query,
+        "org_namespace": org_namespace,
+        "output_format": output_format,
+        "run_id":        run_id,
+    }
+    if uploaded_file_path:
+        initial_state["uploaded_file_path"] = uploaded_file_path
+
+    result = manager_app.invoke(
+        initial_state,
+        config={"recursion_limit": recursion_limit},
+    )
     result["org_namespace"] = org_namespace
     return result

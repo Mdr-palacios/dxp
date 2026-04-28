@@ -1,11 +1,15 @@
 {% comment %}
 HTMX partial — assistant message bubble.
-Appended to #messages via hx-swap="beforeend" in chat.html.
+Appended to #messages via hx-swap="beforeend" in chat.html, OR injected
+directly by the SSE done-frame handler in chat.html.
 
 Context variables:
     answer_html          str  — markdown rendered to HTML (mark as |safe)
     active_agents        list — agent names e.g. ["researcher", "precincts"]
-    generated_file_path  str|None — full path of generated file (truthy = show button)
+    source_cards         list — [{source, date, preview}, ...] from research memos
+    c3_footer            str|None — disclosure shown only on plan runs
+    downloads            list — [{filename, label}, ...] (preferred over single fields)
+    generated_file_path  str|None — full path of generated file (truthy = show legacy single button)
     generated_filename   str|None — basename only, used in /download/<filename>/ URL
     download_label       str|None — "Download Word Doc", "Download CSV", "Download Excel"
     errors               list — non-fatal pipeline error strings
@@ -24,8 +28,8 @@ Context variables:
 </div>
 
 {% else %}
-<div class="msg-row asst">
-  <div class="bubble-asst">
+<div class="msg-row asst"{% if bubble_id %} data-bubble-id="{{ bubble_id }}"{% endif %}>
+  <div class="bubble-asst{% if outline.show_panel %} bubble-asst--with-panel{% endif %}"{% if bubble_id %} id="{{ bubble_id }}"{% endif %}>
 
     <!-- Markdown-rendered answer -->
     <div class="prose-dark">
@@ -43,29 +47,133 @@ Context variables:
     </div>
     {% endif %}
 
-    <!-- Agent pills -->
-    {% if active_agents %}
-    <div class="agents-row">
-      {% for agent in active_agents %}
-      <span class="agent-pill">{{ agent }}</span>
+    {# ── Source cards ─────────────────────────────────────────────────────── #}
+    {# One small card per researcher memo. Click to expand the preview. #}
+    {% if source_cards %}
+    <div class="sources-row" role="list" aria-label="Sources">
+      {% for s in source_cards %}
+      <details class="source-card" role="listitem">
+        <summary class="source-card-summary">
+          <svg width="11" height="11" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+            <path d="M3 2.5h7l3 3V13a.5.5 0 0 1-.5.5h-9.5A.5.5 0 0 1 2.5 13V3a.5.5 0 0 1 .5-.5z" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+            <path d="M10 2.5V5.5h3" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"/>
+          </svg>
+          <span class="source-card-title">{{ s.source }}</span>
+          {% if s.date %}<span class="source-card-date">{{ s.date }}</span>{% endif %}
+        </summary>
+        {% if s.preview %}
+        <p class="source-card-preview">{{ s.preview }}</p>
+        {% endif %}
+      </details>
       {% endfor %}
     </div>
     {% endif %}
 
-    <!-- Download button -->
-    {% if generated_file_path %}
-    <div>
-      <a href="/download/{{ generated_filename }}/" class="btn-download">
-        <svg width="13" height="13" viewBox="0 0 16 16" fill="none">
+    {# ── Agent pills ──────────────────────────────────────────────────────── #}
+    {% if active_agents %}
+    <div class="agents-row">
+      {% for agent in active_agents %}
+      <span class="agent-pill">{{ agent|cut:"_"|title }}</span>
+      {% endfor %}
+    </div>
+    {% endif %}
+
+    {# ── Download buttons ─────────────────────────────────────────────────── #}
+    {# Plans return both a DOCX and a CSV target list, single-topic answers #}
+    {# usually return one (or none). The legacy single-file fallback below   #}
+    {# stays for older session entries that predate the downloads list.      #}
+    {% if downloads %}
+    <div class="dl-row" role="list" aria-label="Downloads">
+      {% for d in downloads %}
+      <a href="/download/{{ d.filename }}/" class="dl-card" role="listitem"
+         {% if d.thumb_color %}style="--dl-color: {{ d.thumb_color }};"{% endif %}>
+        <span class="dl-thumb" aria-hidden="true">{{ d.thumb_kind|default:"FILE" }}</span>
+        <span class="dl-meta">
+          <span class="dl-label">{{ d.label }}</span>
+          <span class="dl-filename" title="{{ d.filename }}">{{ d.filename }}</span>
+        </span>
+        <svg class="dl-arrow" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
           <path d="M8 2v8m0 0l-3-3m3 3l3-3M3 13h10"
                 stroke="currentColor" stroke-width="1.6"
                 stroke-linecap="round" stroke-linejoin="round"/>
         </svg>
-        {{ download_label }}
+      </a>
+      {% endfor %}
+    </div>
+    {% elif generated_file_path %}
+    <div class="dl-row" role="list" aria-label="Downloads">
+      <a href="/download/{{ generated_filename }}/" class="dl-card" role="listitem">
+        <span class="dl-thumb" aria-hidden="true">FILE</span>
+        <span class="dl-meta">
+          <span class="dl-label">{{ download_label }}</span>
+          <span class="dl-filename" title="{{ generated_filename }}">{{ generated_filename }}</span>
+        </span>
+        <svg class="dl-arrow" width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M8 2v8m0 0l-3-3m3 3l3-3M3 13h10"
+                stroke="currentColor" stroke-width="1.6"
+                stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
       </a>
     </div>
     {% endif %}
 
+    {# ── C3-safe footer (plan runs only) ──────────────────────────────────── #}
+    {# Surfaces the nonpartisan-education disclosure for full plans where the  #}
+    {# audience could read targeting + messaging together. Single-topic        #}
+    {# answers (a quick win-number lookup, etc.) don't need it.                #}
+    {% if c3_footer %}
+    <p class="c3-footer">{{ c3_footer }}</p>
+    {% endif %}
+
   </div>
+
+  {# ── Plan panel (Milestone D: split view) ─────────────────────────── #}
+  {# Side rail showing the response structure: section headings (jump links), #}
+  {# active agents, source count, download count. Only shown for true plan    #}
+  {# runs that actually have structure (>=2 headings or >=3 agents). Single-  #}
+  {# topic answers get nothing.                                               #}
+  {% if outline.show_panel %}
+  <aside class="plan-panel" aria-label="Plan outline" data-bubble-target="{{ bubble_id }}">
+    <header class="plan-panel-head">
+      <span class="plan-panel-eyebrow">Plan outline</span>
+      <button type="button" class="plan-panel-toggle" aria-label="Collapse plan outline" data-action="toggle-panel">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M5 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </header>
+
+    {% if outline.sections %}
+    <nav class="plan-panel-nav" aria-label="Sections">
+      <ul>
+        {% for section in outline.sections %}
+        <li class="plan-panel-nav-item plan-panel-nav-item--lvl{{ section.level }}">
+          <a href="#{{ bubble_id }}-{{ section.slug }}" data-action="jump-section">{{ section.text }}</a>
+        </li>
+        {% endfor %}
+      </ul>
+    </nav>
+    {% endif %}
+
+    <div class="plan-panel-meta">
+      {% if outline.agents %}
+      <div class="plan-panel-meta-row">
+        <span class="plan-panel-meta-label">Agents</span>
+        <div class="plan-panel-meta-pills">
+          {% for a in outline.agents %}<span class="plan-panel-pill">{{ a }}</span>{% endfor %}
+        </div>
+      </div>
+      {% endif %}
+      <div class="plan-panel-meta-stats">
+        <span class="plan-panel-stat" title="Sources cited">
+          <strong>{{ outline.source_count }}</strong> sources
+        </span>
+        <span class="plan-panel-stat" title="Files generated">
+          <strong>{{ outline.download_count }}</strong> downloads
+        </span>
+      </div>
+    </div>
+  </aside>
+  {% endif %}
 </div>
 {% endif %}

@@ -173,6 +173,22 @@ class WinNumberAgent:
         projected_turnout = total_cvap * avg_turnout_pct
         win_number = int(projected_turnout * victory_margin)
 
+        # 5b. Persuadable universe: the slice of projected turnout that is
+        # actually moveable in a competitive race. Field convention (Analyst
+        # Institute, Catalist scoring): in a typical competitive general the
+        # swing share runs 18 to 22 percent of projected turnout. We use a
+        # deterministic two-rail estimate and take the smaller value:
+        #   rail A: 20 percent of projected turnout (Analyst Institute median)
+        #   rail B: 2.5 x the win-number cushion (twice the votes needed above
+        #           50 percent, approximating the band whose preference would
+        #           actually decide the race)
+        # Capped at projected_turnout so it never exceeds the people who vote.
+        # This is what the paid-media estimator uses to fire its saturation
+        # warning and what messaging uses to size persuasion buys.
+        rail_a = int(projected_turnout * 0.20)
+        rail_b = int(win_number * 2.5)
+        persuadable_universe = max(1, min(rail_a, rail_b, int(projected_turnout)))
+
         # Build data_notes: flag any missing climate years so the export surfaces gaps
         note_parts = [f"Midterm projection based on {years_used}."]
         if 2022 in years_missing and district_type in ("congressional", "state_house", "state_senate"):
@@ -185,13 +201,14 @@ class WinNumberAgent:
         data_notes = " ".join(note_parts)
 
         return {
-            "win_number":         win_number,
-            "projected_turnout":  int(projected_turnout),
-            "voter_universe_cvap": total_cvap,
-            "avg_turnout_pct":    round(avg_turnout_pct, 4),
-            "victory_margin":     victory_margin,
-            "historical_context": f"Averaged cycles: {relevant_years}",
-            "data_notes":         data_notes,
+            "win_number":           win_number,
+            "projected_turnout":    int(projected_turnout),
+            "voter_universe_cvap":  total_cvap,
+            "persuadable_universe": persuadable_universe,
+            "avg_turnout_pct":      round(avg_turnout_pct, 4),
+            "victory_margin":       victory_margin,
+            "historical_context":   f"Averaged cycles: {relevant_years}",
+            "data_notes":           data_notes,
         }
 
     @staticmethod

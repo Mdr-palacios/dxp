@@ -28,19 +28,62 @@ environ.Env.read_env(BASE_DIR / '.env')
 
 # SECURITY WARNING: keep the secret key used in production secret!
 SECRET_KEY = env('SECRET_KEY')
-DEBUG = env('DEBUG')
 
-OPENAI_API_KEY = env('OPENAI_API_KEY')
-GOOGLE_API_KEY = env('GOOGLE_API_KEY')
-LLAMA_CLOUD_API_KEY = env('LLAMA_CLOUD_API_KEY')
-PINECONE_API_KEY = env('PINECONE_API_KEY')
-OPENAI_PINECONE_INDEX_NAME = env('OPENAI_PINECONE_INDEX_NAME')
-GOOGLEAI_PINECONE_INDEX_NAME = env('GOOGLEAI_PINECONE_INDEX_NAME')
+# All API keys are optional at startup so the app can boot in offline / demo
+# scenarios. Code that uses them must handle missing values explicitly
+# (the researcher's local-corpus fallback is the canonical example).
+OPENAI_API_KEY = env('OPENAI_API_KEY', default='')
+GOOGLE_API_KEY = env('GOOGLE_API_KEY', default='')
+LLAMA_CLOUD_API_KEY = env('LLAMA_CLOUD_API_KEY', default='')
+PINECONE_API_KEY = env('PINECONE_API_KEY', default='')
+OPENAI_PINECONE_INDEX_NAME = env('OPENAI_PINECONE_INDEX_NAME', default='')
+GOOGLEAI_PINECONE_INDEX_NAME = env('GOOGLEAI_PINECONE_INDEX_NAME', default='')
 
-# SECURITY WARNING: don't run with debug turned on in production!
-DEBUG = True
+# ---------------------------------------------------------------------------
+# Production / demo flags
+# ---------------------------------------------------------------------------
 
+# DEBUG defaults to False (production-safe). Set DEBUG=True in .env for local
+# development. The previous hardcoded `DEBUG = True` line below the env read
+# was a footgun that could ship to production by accident, removed.
+DEBUG = env.bool('DEBUG', default=False)
+
+# DEMO_MODE: when true, the app behaves predictably for live audiences.
+# - Random sampling uses a fixed seed (see chat/utils/random_seed.py)
+# - File upload UI is hidden (corpus + synthetic voterfile are pre-loaded)
+# - Admin link is not exposed in the navigation
+# Independent of DEBUG: you can run DEMO_MODE=true with DEBUG=false in front
+# of an audience on a hardened deployment.
+DEMO_MODE = env.bool('DEMO_MODE', default=False)
+
+# Deterministic seed used when DEMO_MODE is on. Documented here so anyone
+# reading the settings knows where the magic number comes from.
+DEMO_RANDOM_SEED = env.int('DEMO_RANDOM_SEED', default=2026)
+
+# Hosts allowed to serve the app. In dev we accept localhost; in production
+# this must be a comma-separated list set via the ALLOWED_HOSTS env var.
 ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=['localhost', '127.0.0.1'])
+
+# Move the Django admin off the default /admin/ path so attackers can't find
+# it with a one-second scan. Override per-environment via ADMIN_URL_PATH.
+# The trailing slash is added automatically if missing.
+_admin_path = env('ADMIN_URL_PATH', default='admin')
+ADMIN_URL_PATH = _admin_path.strip('/') + '/'
+
+# When DEBUG is off, turn on the production security headers Django ships
+# with. These are no-ops in dev (DEBUG=True), so it is safe to set them here
+# unconditionally and let the Django security middleware decide.
+if not DEBUG:
+    SECURE_PROXY_SSL_HEADER = ('HTTP_X_FORWARDED_PROTO', 'https')
+    SECURE_HSTS_SECONDS = env.int('SECURE_HSTS_SECONDS', default=31536000)  # 1 year
+    SECURE_HSTS_INCLUDE_SUBDOMAINS = True
+    SECURE_HSTS_PRELOAD = True
+    SECURE_SSL_REDIRECT = env.bool('SECURE_SSL_REDIRECT', default=True)
+    SESSION_COOKIE_SECURE = True
+    CSRF_COOKIE_SECURE = True
+    X_FRAME_OPTIONS = 'DENY'
+    SECURE_CONTENT_TYPE_NOSNIFF = True
+    SECURE_REFERRER_POLICY = 'strict-origin-when-cross-origin'
 
 
 # Application definition
@@ -86,6 +129,9 @@ TEMPLATES = [
                 'django.template.context_processors.request',
                 'django.contrib.auth.context_processors.auth',
                 'django.contrib.messages.context_processors.messages',
+                # Exposes DEMO_MODE to every template so we can hide the
+                # file upload UI and other admin affordances during a live demo.
+                'chat.context_processors.demo_flags',
             ],
         },
     },
