@@ -37,6 +37,8 @@ from .render_helpers import (
     agent_pill_label,
     auto_title,
     enrich_downloads,
+    plan_outline,
+    prefix_heading_ids,
 )
 
 logger = logging.getLogger(__name__)
@@ -53,7 +55,9 @@ MAX_CONVERSATIONS = 20
 
 _ALLOWED_DOWNLOAD_EXTS = {".docx", ".csv", ".xlsx"}
 
-_MD_EXTENSIONS = ["tables", "fenced_code", "nl2br"]
+# 'toc' adds id="slug" attributes to headings so the plan-panel side rail
+# (Milestone D) can deep-link to a section with #slug.
+_MD_EXTENSIONS = ["tables", "fenced_code", "nl2br", "toc"]
 
 
 # ---------------------------------------------------------------------------
@@ -207,8 +211,14 @@ def send_message_view(request):
     generated_file_path = result.get("generated_file_path")
     errors              = result.get("errors", [])
 
+    # Bubble id (Milestone D): used to namespace heading anchors so side-panel
+    # nav links jump to the right bubble even when multiple plans share section
+    # titles. Also used as the data-attr the edit-and-rerun JS targets.
+    bubble_id = "b-" + uuid.uuid4().hex[:10]
+
     # ── Markdown → HTML ───────────────────────────────────────────────────────
     answer_html = md_lib.markdown(final_answer, extensions=_MD_EXTENSIONS)
+    answer_html = prefix_heading_ids(answer_html, bubble_id)
 
     # ── Source cards + plan-run flag (Milestone A: visible intelligence) ─────
     source_cards = extract_sources(result.get("research_results") or [])
@@ -266,7 +276,16 @@ def send_message_view(request):
     # session-restored history can show typed badges without re-running this.
     downloads = enrich_downloads(downloads)
 
-    conv["messages"].append({"role": "user", "content": query})
+    # Build the plan-panel outline (Milestone D). Cheap to compute, gated
+    # on is_plan_run, so single-topic answers get an empty/no-show payload
+    # and the template skips the side panel entirely.
+    outline = plan_outline(final_answer, active_agents, source_cards, downloads)
+
+    conv["messages"].append({
+        "role":     "user",
+        "content":  query,
+        "msg_id":   uuid.uuid4().hex[:10],   # for edit-and-rerun targeting
+    })
     conv["messages"].append({
         "role":                "assistant",
         "content":             final_answer,
@@ -279,6 +298,8 @@ def send_message_view(request):
         "source_cards":        source_cards,
         "c3_footer":           c3_footer,
         "errors":              errors,
+        "outline":             outline,
+        "bubble_id":           bubble_id,
     })
 
     request.session["conversations"] = conversations
@@ -294,6 +315,8 @@ def send_message_view(request):
         "source_cards":        source_cards,
         "c3_footer":           c3_footer,
         "errors":              errors,
+        "outline":             outline,
+        "bubble_id":           bubble_id,
     })
 
 
@@ -418,7 +441,9 @@ def _build_done_payload(request, query: str, result: dict) -> dict:
     generated_file_path = result.get("generated_file_path")
     errors              = result.get("errors", [])
 
+    bubble_id = "b-" + uuid.uuid4().hex[:10]
     answer_html  = md_lib.markdown(final_answer, extensions=_MD_EXTENSIONS)
+    answer_html  = prefix_heading_ids(answer_html, bubble_id)
     source_cards = extract_sources(result.get("research_results") or [])
     is_plan      = is_plan_run(active_agents)
     c3_footer    = c3_footer_text() if is_plan else None
@@ -451,6 +476,9 @@ def _build_done_payload(request, query: str, result: dict) -> dict:
     # typed badges in both the live bubble and any session-restored history.
     downloads = enrich_downloads(downloads)
 
+    # Plan outline for the side panel (Milestone D).
+    outline = plan_outline(final_answer, active_agents, source_cards, downloads)
+
     bubble_html = render_to_string("partials/message.html", {
         "answer_html":         answer_html,
         "active_agents":       active_agents,
@@ -461,6 +489,8 @@ def _build_done_payload(request, query: str, result: dict) -> dict:
         "source_cards":        source_cards,
         "c3_footer":           c3_footer,
         "errors":              errors,
+        "outline":             outline,
+        "bubble_id":           bubble_id,
     }, request=request)
 
     # Persist into the session so refreshes show the same history.
@@ -479,7 +509,11 @@ def _build_done_payload(request, query: str, result: dict) -> dict:
         conversations = conversations[:MAX_CONVERSATIONS]
         request.session["current_conv_id"] = current_id
 
-    conv["messages"].append({"role": "user", "content": query})
+    conv["messages"].append({
+        "role":     "user",
+        "content":  query,
+        "msg_id":   uuid.uuid4().hex[:10],
+    })
     conv["messages"].append({
         "role":                "assistant",
         "content":             final_answer,
@@ -492,6 +526,8 @@ def _build_done_payload(request, query: str, result: dict) -> dict:
         "source_cards":        source_cards,
         "c3_footer":           c3_footer,
         "errors":              errors,
+        "outline":             outline,
+        "bubble_id":           bubble_id,
     })
     request.session["conversations"] = conversations
     request.session.modified = True
@@ -502,6 +538,7 @@ def _build_done_payload(request, query: str, result: dict) -> dict:
         "active_agents": active_agents,
         "sources_count": len(source_cards),
         "downloads_count": len(downloads),
+        "plan_panel":    outline.get("show_panel", False),
     }
 
 

@@ -11,6 +11,8 @@ auto_title()       turns a raw user query into a short, sidebar-friendly
                    conversation title (drops filler words, title-cases).
 download_thumb_kind() maps a filename to a (kind, color) tuple for the
                    download-card thumbnail badge.
+plan_outline()     builds a sectioned outline of a plan response (markdown
+                   headings, agents, sources, downloads) for the side panel.
 """
 from __future__ import annotations
 
@@ -240,3 +242,118 @@ def enrich_downloads(downloads: list[dict] | None) -> list[dict]:
             "thumb_color": thumb["color"],
         })
     return out
+
+
+# Heading-id prefix injector (Milestone D). Multiple assistant bubbles can
+# share heading text ("Strategy"), which would create duplicate DOM ids and
+# break the side-panel anchor links. We prefix every id="..." on h1/h2/h3
+# with the bubble's unique id so anchors land on the right bubble.
+_HEADING_ID_RE = re.compile(
+    r'(<h[1-3]\b[^>]*?)\sid="([^"]+)"',
+    re.IGNORECASE,
+)
+
+
+def prefix_heading_ids(html: str | None, bubble_id: str | None) -> str:
+    """
+    Prefix every <h1|h2|h3 id="slug"> inside ``html`` with ``bubble_id`` so
+    each rendered bubble has its own anchor namespace. Pure (returns a new
+    string), defensive on missing inputs.
+    """
+    if not html or not bubble_id:
+        return html or ""
+    def _sub(m: re.Match) -> str:
+        return f'{m.group(1)} id="{bubble_id}-{m.group(2)}"'
+    return _HEADING_ID_RE.sub(_sub, html)
+
+
+# ---------------------------------------------------------------------------
+# Plan outline (Milestone D: plan-panel split view)
+# ---------------------------------------------------------------------------
+#
+# A plan response is a multi-section markdown document covering targeting,
+# messaging, cost, sources, etc. The side panel needs a structured outline
+# so the operator can scan what landed and jump to a section. We do this
+# without taxing the agents: the markdown headings already carry the
+# section names, and the agents/sources/downloads counts give us anchored
+# meta-rows even if a heading was missed.
+
+# Match ATX-style markdown headings (#, ##, ###). Block start only, so we do
+# not pick up '#' inside fenced code blocks (we strip those first).
+_HEADING_RE = re.compile(r"^(#{1,3})\s+(.+?)\s*#*\s*$", re.MULTILINE)
+
+# Strip fenced code blocks before scanning headings — fenced bodies can
+# contain '#' in shell prompts, comments, etc., and we never want them.
+_FENCED_RE = re.compile(r"```.*?```", re.DOTALL)
+
+# Slug pattern: lowercase, dash-joined, ascii-only. Mirrors what
+# python-markdown's TOC extension would generate so links match.
+_SLUG_DROP_RE = re.compile(r"[^a-z0-9\s\-]+")
+_SLUG_WS_RE   = re.compile(r"[\s\-]+")
+
+
+def _slugify_heading(text: str) -> str:
+    """Slugify a heading the same way the chat bubble does for anchors."""
+    if not text:
+        return ""
+    s = text.strip().lower()
+    s = _SLUG_DROP_RE.sub("", s)
+    s = _SLUG_WS_RE.sub("-", s)
+    return s.strip("-")
+
+
+def plan_outline(
+    final_answer: str | None,
+    active_agents: Iterable[str] | None = None,
+    source_cards: Iterable[dict] | None = None,
+    downloads: Iterable[dict] | None = None,
+) -> dict:
+    """
+    Build the data shape the plan-panel template renders.
+
+    Returns a dict with:
+        is_plan: bool      — did this run earn a panel?
+        sections: list     — [{level, text, slug}] for every #/##/### heading
+        agents: list       — prettified active agent labels
+        source_count: int  — for the meta-row badge
+        download_count: int
+
+    The panel is shown only when is_plan is True AND we found at least one
+    heading or have multiple agents to surface. Single-topic answers
+    (a one-shot win-number lookup) get nothing, which is the right call:
+    they don't need a navigation aid.
+    """
+    agents_list = list(active_agents or [])
+    is_plan = is_plan_run(agents_list)
+
+    sections: list[dict] = []
+    if final_answer:
+        scrubbed = _FENCED_RE.sub("", final_answer)
+        for m in _HEADING_RE.finditer(scrubbed):
+            level = len(m.group(1))
+            text  = m.group(2).strip()
+            if not text:
+                continue
+            sections.append({
+                "level": level,
+                "text":  text,
+                "slug":  _slugify_heading(text),
+            })
+
+    source_count   = sum(1 for _ in (source_cards or []))
+    download_count = sum(1 for _ in (downloads or []))
+
+    # Show the panel only when there is real outline value: a plan run AND
+    # either a couple of headings OR a couple of agents to label. This
+    # avoids a near-empty side rail on borderline responses.
+    has_structure = len(sections) >= 2 or len(agents_list) >= 3
+    show_panel    = bool(is_plan and has_structure)
+
+    return {
+        "is_plan":        bool(is_plan),
+        "show_panel":     show_panel,
+        "sections":       sections,
+        "agents":         [agent_pill_label(a) for a in agents_list],
+        "source_count":   source_count,
+        "download_count": download_count,
+    }

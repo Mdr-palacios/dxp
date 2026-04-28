@@ -28,8 +28,8 @@ Context variables:
 </div>
 
 {% else %}
-<div class="msg-row asst">
-  <div class="bubble-asst">
+<div class="msg-row asst"{% if bubble_id %} data-bubble-id="{{ bubble_id }}"{% endif %}>
+  <div class="bubble-asst{% if outline.show_panel %} bubble-asst--with-panel{% endif %}"{% if bubble_id %} id="{{ bubble_id }}"{% endif %}>
 
     <!-- Markdown-rendered answer -->
     <div class="prose-dark">
@@ -126,5 +126,54 @@ Context variables:
     {% endif %}
 
   </div>
+
+  {# ── Plan panel (Milestone D: split view) ─────────────────────────── #}
+  {# Side rail showing the response structure: section headings (jump links), #}
+  {# active agents, source count, download count. Only shown for true plan    #}
+  {# runs that actually have structure (>=2 headings or >=3 agents). Single-  #}
+  {# topic answers get nothing.                                               #}
+  {% if outline.show_panel %}
+  <aside class="plan-panel" aria-label="Plan outline" data-bubble-target="{{ bubble_id }}">
+    <header class="plan-panel-head">
+      <span class="plan-panel-eyebrow">Plan outline</span>
+      <button type="button" class="plan-panel-toggle" aria-label="Collapse plan outline" data-action="toggle-panel">
+        <svg width="12" height="12" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+          <path d="M5 4l4 4-4 4" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
+        </svg>
+      </button>
+    </header>
+
+    {% if outline.sections %}
+    <nav class="plan-panel-nav" aria-label="Sections">
+      <ul>
+        {% for section in outline.sections %}
+        <li class="plan-panel-nav-item plan-panel-nav-item--lvl{{ section.level }}">
+          <a href="#{{ bubble_id }}-{{ section.slug }}" data-action="jump-section">{{ section.text }}</a>
+        </li>
+        {% endfor %}
+      </ul>
+    </nav>
+    {% endif %}
+
+    <div class="plan-panel-meta">
+      {% if outline.agents %}
+      <div class="plan-panel-meta-row">
+        <span class="plan-panel-meta-label">Agents</span>
+        <div class="plan-panel-meta-pills">
+          {% for a in outline.agents %}<span class="plan-panel-pill">{{ a }}</span>{% endfor %}
+        </div>
+      </div>
+      {% endif %}
+      <div class="plan-panel-meta-stats">
+        <span class="plan-panel-stat" title="Sources cited">
+          <strong>{{ outline.source_count }}</strong> sources
+        </span>
+        <span class="plan-panel-stat" title="Files generated">
+          <strong>{{ outline.download_count }}</strong> downloads
+        </span>
+      </div>
+    </div>
+  </aside>
+  {% endif %}
 </div>
 {% endif %}
