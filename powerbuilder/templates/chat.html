@@ -853,8 +853,9 @@
 
     /* Tighten thread + input bar for narrow screens. Top padding leaves */
     /* room for the floating hamburger button so the first message is not */
-    /* hidden underneath it (hamburger sits at top:60px size 36px). */
-    .chat-scroll { padding: 3.6rem 0.85rem 0.85rem; }
+    /* hidden underneath it. Hamburger spans top:60px..96px (36px tall);  */
+    /* 4.5rem (~72px) of top padding plus the 52px nav clears it cleanly. */
+    .chat-scroll { padding: 4.5rem 0.85rem 0.85rem; }
     .chat-thread { max-width: 100%; }
     .input-bar { padding-left: 0.85rem; padding-right: 0.85rem; }
     .bubble-user, .bubble-asst { max-width: 90%; font-size: 0.83rem; }
@@ -1254,6 +1255,19 @@
     textarea.style.height = Math.min(textarea.scrollHeight, 96) + 'px';
   }
   textarea.addEventListener('input', autoResize);
+
+  /* ── Responsive placeholder ───────────────────────────────────── */
+  /* The full placeholder wraps onto two lines on narrow phones and the   */
+  /* second line gets clipped under the rounded input box. Swap to a      */
+  /* shorter version below 480px so it fits one line cleanly.             */
+  const _PLACEHOLDER_LONG = textarea.getAttribute('placeholder') || '';
+  const _PLACEHOLDER_SHORT = 'Ask about your district\u2026';
+  function syncPlaceholder() {
+    const narrow = window.matchMedia('(max-width: 480px)').matches;
+    textarea.setAttribute('placeholder', narrow ? _PLACEHOLDER_SHORT : _PLACEHOLDER_LONG);
+  }
+  syncPlaceholder();
+  window.addEventListener('resize', syncPlaceholder);
 
   /* ── Enter to send (Shift+Enter = newline) ─────────────────────── */
   textarea.addEventListener('keydown', function (e) {
