@@ -29,7 +29,7 @@ os.environ.pop("PINECONE_API_KEY", None)
 def main() -> int:
     failures: list[str] = []
 
-    # 1. Local index exists and has chunks across all 8 source files.
+    # 1. Local index exists and has chunks across all 9 source files.
     index_path = SCRIPT_DIR / ".local_corpus_index.json"
     if not index_path.exists():
         print(f"FAIL: local index missing at {index_path}")
@@ -37,11 +37,11 @@ def main() -> int:
         return 1
     payload = json.loads(index_path.read_text())
     chunks = payload["chunks"]
-    if len(chunks) < 8:
-        failures.append(f"expected >=8 chunks, got {len(chunks)}")
+    if len(chunks) < 9:
+        failures.append(f"expected >=9 chunks, got {len(chunks)}")
     sources = {c["metadata"]["source_file"] for c in chunks}
-    if len(sources) != 8:
-        failures.append(f"expected 8 distinct source files, got {len(sources)}: {sources}")
+    if len(sources) != 9:
+        failures.append(f"expected 9 distinct source files, got {len(sources)}: {sources}")
 
     # 2. Frontmatter parsing extracted real titles, not filename fallbacks.
     titles = {c["metadata"].get("title", "") for c in chunks}
@@ -103,8 +103,30 @@ def main() -> int:
         k=5,
     )
     top_files_aapi = [r.metadata.get("source_file", "") for r in results_aapi]
-    if not any("aapi" in f.lower() for f in top_files_aapi):
+    if not any("aapi_multilanguage" in f.lower() or "08_" in f.lower() for f in top_files_aapi):
         failures.append(f"AAPI multi-language query did not surface file 08, got {top_files_aapi}")
+
+    # 5d. Extended-languages queries should surface file 09 (Khmer, Punjabi,
+    # Bengali, etc.).
+    results_khmer = _local_corpus_search(
+        "Cambodian Khmer-language door scripts and CMAA partnerships in Long Beach",
+        k=5,
+    )
+    top_files_khmer = [r.metadata.get("source_file", "") for r in results_khmer]
+    if not any("extended" in f.lower() or "09_" in f.lower() for f in top_files_khmer):
+        failures.append(
+            f"Khmer/CMAA query did not surface file 09, got {top_files_khmer}"
+        )
+
+    results_sikh = _local_corpus_search(
+        "Punjabi Gurmukhi mailer for Sikh voters and gurdwara registration drives",
+        k=5,
+    )
+    top_files_sikh = [r.metadata.get("source_file", "") for r in results_sikh]
+    if not any("extended" in f.lower() or "09_" in f.lower() for f in top_files_sikh):
+        failures.append(
+            f"Punjabi/gurdwara query did not surface file 09, got {top_files_sikh}"
+        )
 
     # 6. Score with empty query returns nothing.
     empty_results = _local_corpus_search("", k=5)
@@ -126,7 +148,7 @@ def main() -> int:
             print(f"  - {f}")
         return 1
 
-    print("PASS: all 9 assertion groups OK.")
+    print("PASS: all 11 assertion groups OK.")
     return 0
 
 
