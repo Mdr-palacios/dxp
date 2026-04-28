@@ -37,7 +37,7 @@
 2. **Narrator says:** "This is a 50,000-row synthetic file shaped exactly like a real TargetSmart export. The system is going to recognize the vendor, standardize the columns, and segment the file before we even ask a question."
 3. **Type into the chat:**
 
-   > Build a Gwinnett County GOTV plan targeting Latinx voters age 18-35. Generate a Spanish door-knock script and give me a CSV of the target list.
+   > Build a Gwinnett County GOTV plan targeting Latinx voters age 18-35 with a $100,000 program budget. Generate a Spanish door-knock script, the paid-media plan, and a CSV of the target list.
 
 4. **Send.** Watch the agent log appear in real time.
 
@@ -62,15 +62,24 @@ The deliverable appears in the chat. Walk through it section by section:
 4. **The talking points.** Each is tied to a research source. "Notice, every claim has a citation: the Census data on Gwinnett's renter share, the public policy context on housing, the field benchmark on door + SMS compounding."
 5. **The cost summary.** "About $13 per conversion at volunteer-driven canvass rates. The system pulled those benchmarks from our public field operations corpus."
 
-## Act 4: The CSV export (~1 minute)
+## Act 4: The downloads (~1.5 minutes)
 
-1. **Click the CSV download link.**
-2. **Open it.** Show the columns: voter_id, name, address, precinct, language preference, demo flags, ranked tier.
-3. **Narrator:** "This is what an organizer takes into the field tomorrow morning. Drop it into MiniVAN, hand it to the canvass team, and the targeting work that would have taken a week of analyst time is done."
+A plan run produces **two files**, side by side, from a single chat turn: a styled Word document with the full strategy, and a CSV with the field-ready target list. Two download buttons appear under the assistant's message.
+
+1. **Click the DOCX download.**
+2. **Open it.** Walk the audience through the section order:
+   - Executive Summary, District Background, Target Universe and Demographics, Geographic Targeting (with the top precincts table inserted right after the prose).
+   - **Budget Estimate.** Per-Contact Rate Estimates table, then a styled **Paid Media Plan** subsection: tier label, total digital and non-digital spend, the 7-column channel rollup table (Channel, Spend, Share, CPM range, Impressions, Reach, Lift in percentage points), non-digital allocation bullets, total persuasion lift, and notes (frequency caps, in-language pricing, saturation warning if it fired).
+   - Win Number Calculation, with the Persuadable Universe row right under Projected Turnout: the addressable swing audience the paid-media plan is sized against.
+   - Program Recommendations.
+3. **Narrator:** "Notice the win-number table doesn't just say 'votes to win': it says 'persuadable universe is 4,400 voters,' and that number is what bounded the digital reach math you just saw above. The plan is internally consistent, not just stitched together."
+4. **Click the CSV download.**
+5. **Open it.** Show the columns: precinct name, registered voters, lean, demographic breakdowns, and ranked tier.
+6. **Narrator:** "This is what an organizer takes into the field tomorrow morning. Drop it into MiniVAN, hand it to the canvass team, and the targeting work that would have taken a week of analyst time is done."
 
 ## Act 5: Close (~1 minute)
 
-> What you just saw runs on a stack we maintain in-house: Django plus LangGraph for the agent orchestration, Pinecone for the research corpus, real US Census and FEC data for the geographic and electoral analysis. The messaging agent is multi-language out of the box (Spanish, Mandarin, Vietnamese, Korean) because Gwinnett County, where we built the demo, is functionally a multilingual electorate, and so are the suburbs that decide every Sun Belt cycle.
+> What you just saw runs on a stack we maintain in-house: Django plus LangGraph for the agent orchestration, Pinecone for the research corpus (with a local fallback so dev work never blocks on a network call), real US Census and FEC data for the geographic and electoral analysis. The messaging agent is multi-language out of the box (Spanish, Mandarin, Vietnamese, Korean, plus the AAPI extended set: Japanese, Thai, Khmer, Urdu, Bengali, Punjabi, Gujarati) because Gwinnett County, where we built the demo, is functionally a multilingual electorate, and so are the suburbs that decide every Sun Belt cycle. The corpus also covers rural and exurban organizing for districts that look nothing like Gwinnett: USDA county typology, drive-time turf cuts, trusted-messenger maps, and per-tactic cost multipliers.
 >
 > What I want you to take away: this is not a chatbot. This is a coordinator that knows when to call which specialist, holds them accountable to the research, and produces field-ready deliverables in the time it takes to make coffee.
 >
@@ -90,7 +99,10 @@ A: Voter file data is processed in memory and discarded at the end of the reques
 A: No. It does the work that would otherwise not happen at all: the rural county the analyst doesn't have time for, the civic education program with no research budget, the language-specific outreach the organizer would have winged. The programs that already have a strategy team get a faster strategy team.
 
 **Q: What languages does it support?**
-A: Spanish, Mandarin, Vietnamese, Korean today. Adding a language is a one-file change in `chat/agents/messaging.py` (we just register the language code and a short style note). Any language is feasible; we prioritized the ones with the largest non-English-speaking populations in Gwinnett and similar Sun Belt suburbs.
+A: Two tiers. The first-class set is Spanish, Mandarin (Simplified and Traditional), Vietnamese, Korean, Tagalog, and Hindi, with full message-format coverage. The extended set, with door-script and outreach guidance keyed off the curated corpus, covers Japanese, Thai, Khmer, Urdu, Bengali, Punjabi, and Gujarati. Adding another language is a one-file change in `chat/agents/messaging.py` and a corpus file in `tool_templates/best_practices/`.
+
+**Q: Does this work outside Sun Belt suburbs?**
+A: Yes. We added a rural and exurban field playbook to the corpus that covers USDA county typology (RUCC codes 4 to 9), drive-time turf cuts, trusted-messenger maps for low-density districts, vote-by-mail logistics in counties with slow rural mail, and per-tactic cost multipliers (rural doors run roughly 2x the urban benchmark because of windshield time). A small-town judicial race or an exurban county commission seat gets the same caliber of plan as a Gwinnett legislative district.
 
 **Q: How is this different from [generic AI chat product]?**
 A: A generic chat product gives you a paragraph. Powerbuilder gives you a plan, a script in the right language, a cost model, and a target CSV, grounded in field-tested research, in the time it takes to ask. The orchestration layer is the product.
@@ -104,7 +116,7 @@ A: We're designing this for nonpartisan civic engagement nonprofits, the 501(c)(
 
 - **Live site is slow or down:** Switch the screen share to the local instance running at `localhost:8000`. Same flow, same output.
 - **Spanish output comes back in English:** Stop the demo, refresh, retry. If it still fails, the language detection regex didn't match. Open the browser console, show "agent log: language_intent=es" if present, and acknowledge: "the language directive plumbing got skipped (known edge case, fix is queued)." Don't try to debug live.
-- **CSV download fails:** Show the on-screen target list and tell the audience the export endpoint is in maintenance. Email them the file after the demo.
+- **A download button is missing or fails:** Plan runs emit two files (DOCX + CSV); if only one renders, finish the demo with whichever one came back, show the on-screen output for the missing piece, and email both files after. The export pipeline writes them to `exports/`, so the operator can pull them off the deployed instance directly if needed.
 - **An agent times out:** "We're pulling live Census and FEC data; sometimes those APIs are slow. Let me restart that step." Re-send the request.
 
 ---

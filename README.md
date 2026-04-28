@@ -63,7 +63,10 @@ Most civic technology is sold to large institutions and staffed by analysts. The
 - **`chat/agents/messaging.py`**: generates five messaging formats (canvass, phone, text, mail, digital) grounded exclusively in researcher findings. Honors `language_intent` for Spanish, Mandarin, Vietnamese, and Korean output.
 - **`chat/agents/voterfile_agent.py`**: vendor-aware voter file processor. Auto-detects TargetSmart / Catalist / L2 / VAN exports, standardizes column names, and segments by age cohort, language, geography, and turnout propensity.
 - **`chat/agents/precincts.py`** + **`win_number.py`** + **`election_results.py`**: geographic and electoral analysis. Pull live US Census CVAP and FEC data.
+- **`chat/agents/finance_agent.py`** + **`chat/agents/paid_media.py`**: cost calculator with two layers. The base layer prices door, phone, text, mail, and digital contacts against per-contact unit costs and FEC historical comparables. The paid-media layer (`paid_media.py`, codified from corpus file 07) builds a deterministic digital plan when a budget is set: 4 spend tiers, in-language CPM discount (22.5 percent), frequency-cap-based reach math, persuasion-point lift estimates, and a saturation cap that fires when the planned digital reach would exceed the persuadable universe.
+- **`chat/agents/export.py`**: synthesizer plus DOCX/CSV/XLSX renderer. Plan runs always emit a styled DOCX (Light Grid Accent 1 tables for win number, target precincts, per-contact rates, and the paid-media digital channel rollup) alongside a CSV companion of the target precinct list, so an operator gets both the strategy doc and the walk/call list from one chat turn.
 - **`tool_templates/`**: editable Markdown templates for each output format (canvass scripts, phone scripts, etc.) plus `costs.json` for cost-per-contact rates. Drop a new `.md` in here to change copy structure without touching code.
+- **`tool_templates/best_practices/`**: 10 curated field-research files (Latinx GOTV, Spanish messaging norms, new-registrant outreach, contact-channel mix, Gen Z, Gwinnett context, paid-media digital benchmarks, AAPI multi-language outreach, AAPI extended languages, and rural and exurban organizing). Seeded into Pinecone via `python scripts/seed_best_practices.py`. The same script writes a local fallback index (`scripts/.local_corpus_index.json`) so the researcher keeps working in dev when Pinecone is unreachable.
 
 ### Data isolation
 
@@ -129,14 +132,14 @@ Open http://localhost:8000 and use the demo password from your `.env`.
 
 A request like "build me a political plan for GA-07" triggers the **political plan** sequence:
 
-1. **Researcher** pulls relevant memos from Pinecone (general + org).
+1. **Researcher** pulls relevant memos from Pinecone (general + org), or from the local fallback index when Pinecone is unreachable.
 2. **Election Results** pulls FEC + state data on the district's last 3 cycles.
 3. **Opposition Research** (`chat/agents/opposition_research.py`) retrieves the contextual research book for the district. The module name is inherited from earlier work; in nonpartisan use, this agent surfaces public-record context on incumbents and policy positions.
-4. **Win Number** calculates votes-to-win from CVAP, historical turnout, and district type.
+4. **Win Number** calculates votes-to-win from CVAP, historical turnout, and district type. It also derives a **persuadable universe**, taking the smaller of (a) 20 percent of projected turnout, (b) 2.5 times the win-number cushion, capped at projected turnout. Downstream agents read this as the addressable swing audience.
 5. **Precincts** identifies and ranks target precincts with demographic breakdowns.
 6. **Messaging** generates five formats (canvass, phone, text, mail, digital), grounded only in steps 1-5.
-7. **Cost Calculator** estimates spend using `tool_templates/costs.json` rates.
-8. **Synthesizer** assembles the final Markdown/DOCX with citations.
+7. **Cost Calculator** estimates spend using `tool_templates/costs.json` rates. When a total program budget is set, it also builds a **paid-media plan** (channel mix, CPMs with in-language discount, impressions, reach capped at the persuadable universe, and persuasion-point lift estimates) from corpus file 07.
+8. **Synthesizer** assembles the deliverable, emitting a styled DOCX (with the paid-media plan rendered as a styled subsection under Budget Estimate) and a CSV companion of the target precincts.
 
 For focused single-topic requests, the orchestrator picks just the one or two agents needed and skips the rest.
 
@@ -163,7 +166,7 @@ python bulk_upload.py research_memos/
 python bulk_upload.py research_memos/ --force-reindex
 ```
 
-Best-practices Markdown files in `tool_templates/best_practices/` are also seeded into Pinecone via `python scripts/seed_best_practices.py`. These are the curated field playbooks the messaging agent leans on when no client-specific corpus is available.
+Best-practices Markdown files in `tool_templates/best_practices/` are also seeded into Pinecone via `python scripts/seed_best_practices.py`. These are the curated field playbooks the messaging agent leans on when no client-specific corpus is available. Adding a new file is a drop-in: write a frontmatter block (source, date, document type, topics), the body, then re-run the seed script. The script prints chunks-per-file and writes both a Pinecone upload (when reachable) and a local fallback index for development.
 
 ## Running tests
 
@@ -176,6 +179,20 @@ python -m pytest chat/tests/test_full_pipeline.py
 python scripts/_validate_demo_voterfile.py
 python scripts/_test_language_and_chaining.py
 ```
+
+The demo-mode hardening branch ships a focused suite of deterministic tests that run without keys, without network, and without Django request mocking. They cover the parts of the pipeline most likely to silently regress:
+
+```bash
+cd powerbuilder
+./venv/bin/python scripts/_test_demo_voterfile_autoload.py        # 4 assertions
+./venv/bin/python scripts/_test_export_csv_companion.py           # 5 assertions
+./venv/bin/python scripts/_test_local_corpus_fallback.py          # 13 assertions
+./venv/bin/python scripts/_test_paid_media_estimator.py           # 11 assertions
+./venv/bin/python scripts/_test_export_paid_media_docx.py         # 6 assertions
+./venv/bin/python scripts/_test_persuadable_universe_wiring.py    # 9 assertions
+```
+
+48 assertions total; all green on `demo-mode-and-hardening`.
 
 ## Demo data
 
