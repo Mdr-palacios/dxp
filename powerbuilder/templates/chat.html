@@ -157,6 +157,109 @@
     padding: 0.25rem 0 0.25rem 0.875rem; color: var(--text-muted); font-style: italic;
   }
 
+  /* ── Source cards (Milestone A) ─────────────────────────────── */
+  .sources-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.4rem;
+    margin-top: 0.75rem;
+  }
+  .source-card {
+    background: rgba(255,255,255,0.03);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    padding: 0.4rem 0.65rem;
+    font-size: 0.72rem;
+    max-width: 100%;
+    transition: border-color 0.12s, background 0.12s;
+  }
+  .source-card:hover { border-color: rgba(59,130,246,0.4); background: rgba(59,130,246,0.05); }
+  .source-card[open] { background: rgba(59,130,246,0.06); border-color: rgba(59,130,246,0.35); }
+  .source-card-summary {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    cursor: pointer;
+    list-style: none;
+    color: var(--text-secondary);
+  }
+  .source-card-summary::-webkit-details-marker { display: none; }
+  .source-card-title { color: var(--text-primary); font-weight: 600; }
+  .source-card-date  { color: var(--text-muted); font-size: 0.68rem; }
+  .source-card-preview {
+    color: var(--text-secondary);
+    font-size: 0.75rem;
+    line-height: 1.55;
+    margin: 0.5rem 0 0;
+    white-space: pre-wrap;
+  }
+
+  /* ── C3-safe disclosure footer ──────────────────────────────── */
+  .c3-footer {
+    margin-top: 0.75rem;
+    padding-top: 0.6rem;
+    border-top: 1px dashed var(--border);
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    font-style: italic;
+  }
+
+  /* ── Live trace strip (streaming) ───────────────────────────── */
+  /* Replaces the dot bubble during a streaming run. Shows the agent           */
+  /* currently working plus a compact timeline of agents already done.         */
+  #trace-strip { display: none; max-width: 720px; margin: 0 auto 1rem; }
+  .trace-bubble {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 4px 18px 18px 18px;
+    padding: 0.7rem 1rem;
+  }
+  .trace-current {
+    display: flex;
+    align-items: center;
+    gap: 0.55rem;
+    font-size: 0.82rem;
+    color: var(--text-primary);
+  }
+  .trace-spinner {
+    width: 12px; height: 12px;
+    border: 2px solid rgba(59,130,246,0.25);
+    border-top-color: var(--accent);
+    border-radius: 50%;
+    animation: trace-spin 0.85s linear infinite;
+    flex-shrink: 0;
+  }
+  @keyframes trace-spin { to { transform: rotate(360deg); } }
+  .trace-history {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+  }
+  .trace-step {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.3rem;
+    background: rgba(34,197,94,0.08);
+    color: #4ade80;
+    border: 1px solid rgba(34,197,94,0.25);
+    border-radius: 999px;
+    font-size: 0.68rem;
+    padding: 2px 8px;
+  }
+  .trace-step::before {
+    content: "✓";
+    font-weight: 700;
+  }
+  .trace-step.errored {
+    background: rgba(239,68,68,0.07);
+    color: #f87171;
+    border-color: rgba(239,68,68,0.3);
+  }
+  .trace-step.errored::before { content: "⚠"; }
+
   /* ── Agent pills ────────────────────────────────────────────── */
   .agents-row {
     display: flex;
@@ -534,6 +637,19 @@
         </div>
       </div>
 
+      <!-- Live trace strip (Milestone A: streaming agent trace) -->
+      <div id="trace-strip" aria-live="polite">
+        <div class="msg-row asst">
+          <div class="trace-bubble">
+            <div class="trace-current">
+              <span class="trace-spinner" aria-hidden="true"></span>
+              <span id="trace-current-label">Starting</span>
+            </div>
+            <div class="trace-history" id="trace-history"></div>
+          </div>
+        </div>
+      </div>
+
     </div><!-- .chat-scroll -->
 
     <!-- ── Input bar ───────────────────────────────────────────── -->
@@ -546,6 +662,7 @@
           hx-post="/send/"
           hx-target="#messages"
           hx-swap="beforeend"
+          hx-trigger="send-via-htmx"
         >
           {% csrf_token %}
           {% if not DEMO_MODE %}
@@ -660,40 +777,157 @@
 
   /* ── Saved query — injected into HTMX request after form serialization ── */
   let _pendingQuery = '';
+  /* ── Streaming run state (Milestone A: SSE agent trace) ──────────── */
+  let _activeStream = null;  // current EventSource, if any
 
-  /* ── Form submit — validation + immediate user bubble ──────────── */
+  function showTrace() {
+    document.getElementById('typing-indicator').style.display = 'none';
+    const strip = document.getElementById('trace-strip');
+    document.getElementById('trace-current-label').textContent = 'Starting';
+    document.getElementById('trace-history').innerHTML = '';
+    strip.style.display = 'block';
+  }
+  function hideTrace() {
+    document.getElementById('trace-strip').style.display = 'none';
+  }
+  function setTraceCurrent(label) {
+    document.getElementById('trace-current-label').textContent = label || 'Working';
+  }
+  function pushTraceStep(label, errored) {
+    const history = document.getElementById('trace-history');
+    const step = document.createElement('span');
+    step.className = errored ? 'trace-step errored' : 'trace-step';
+    step.textContent = label;
+    history.appendChild(step);
+  }
+
+  /* ── Form submit — SSE-first, falls back to HTMX when a file is attached ── */
+  // The form has hx-trigger="send-via-htmx" so HTMX never fires on a normal
+  // submit; we route to SSE by default, and dispatch the HTMX trigger only
+  // when a file is attached (SSE is GET-only and can't carry uploads).
   document.getElementById('chat-form').addEventListener('submit', function (e) {
+    e.preventDefault();
+
     const query = textarea.value.trim();
     if (!query) {
-      e.preventDefault();    // also prevents HTMX from firing
       textarea.focus();
       return;
     }
 
-    // Save before clearing — HTMX reads from textarea at document-level (after us),
-    // so it would see '' if we clear here. We inject the real value in configRequest.
+    const fi = document.getElementById('file-input');
+    const hasFile = fi && fi.files && fi.files.length > 0;
+
     _pendingQuery = query;
 
     // Remove empty-state placeholder once we start chatting
     const emptyState = document.getElementById('empty-state');
     if (emptyState) emptyState.remove();
 
-    // Append user bubble immediately (before server responds)
+    // Append user bubble immediately
     const messages = document.getElementById('messages');
     const row = document.createElement('div');
     row.className = 'msg-row user';
     row.innerHTML = '<div class="bubble-user">' + escapeHtml(query) + '</div>';
     messages.appendChild(row);
 
-    // Show typing indicator
-    document.getElementById('typing-indicator').style.display = 'block';
-
-    // Reset textarea (HTMX will get the value from _pendingQuery via configRequest)
+    // Reset textarea
     textarea.value = '';
     textarea.style.height = 'auto';
-
     scrollToBottom();
+
+    if (hasFile) {
+      // File-upload fallback: HTMX POST to /send/.
+      document.getElementById('typing-indicator').style.display = 'block';
+      htmx.trigger('#chat-form', 'send-via-htmx');
+      scrollToBottom();
+      return;
+    }
+
+    startStream(query);
   });
+
+  function startStream(query) {
+    if (_activeStream) {
+      try { _activeStream.close(); } catch (e) { /* noop */ }
+      _activeStream = null;
+    }
+    showTrace();
+    scrollToBottom();
+
+    const url = '/stream/?query=' + encodeURIComponent(query);
+    const es = new EventSource(url);
+    _activeStream = es;
+    let _gotDone = false;
+
+    es.onmessage = function (msgEvent) {
+      let data;
+      try { data = JSON.parse(msgEvent.data); } catch (err) { return; }
+      if (!data || !data.type) return;
+
+      switch (data.type) {
+        case 'hello':
+          break;
+        case 'ping':
+          break;  // heartbeat, no UI change
+        case 'agent_start':
+          setTraceCurrent(data.label || data.agent || 'Working');
+          break;
+        case 'agent_done':
+          if (data.label) pushTraceStep(data.label, false);
+          break;
+        case 'agent_error':
+          pushTraceStep(data.label || ((data.agent || 'agent') + ' failed'), true);
+          break;
+        case 'done':
+          _gotDone = true;
+          finishStream(data);
+          break;
+        case 'error':
+          _gotDone = true;
+          finishStreamWithError(data.label || 'Server error');
+          break;
+      }
+    };
+
+    es.onerror = function () {
+      // Browsers fire onerror when the server closes the connection too,
+      // so only treat it as fatal if we never received a done frame.
+      if (_activeStream === es && !_gotDone) {
+        finishStreamWithError('Connection lost — please try again.');
+      }
+    };
+  }
+
+  function finishStream(data) {
+    if (_activeStream) {
+      try { _activeStream.close(); } catch (e) { /* noop */ }
+      _activeStream = null;
+    }
+    hideTrace();
+    if (data && data.html) {
+      const messages = document.getElementById('messages');
+      const wrapper = document.createElement('div');
+      wrapper.innerHTML = data.html;
+      while (wrapper.firstChild) messages.appendChild(wrapper.firstChild);
+    }
+    _pendingQuery = '';
+    scrollToBottom();
+  }
+
+  function finishStreamWithError(label) {
+    if (_activeStream) {
+      try { _activeStream.close(); } catch (e) { /* noop */ }
+      _activeStream = null;
+    }
+    hideTrace();
+    const messages = document.getElementById('messages');
+    const errRow = document.createElement('div');
+    errRow.className = 'msg-row asst';
+    errRow.innerHTML = '<div class="bubble-error">⚠ ' + escapeHtml(label) + '</div>';
+    messages.appendChild(errRow);
+    _pendingQuery = '';
+    scrollToBottom();
+  }
 
   /* ── Inject saved query into request params (fires after form serialization) ── */
   htmx.on('htmx:configRequest', function (evt) {

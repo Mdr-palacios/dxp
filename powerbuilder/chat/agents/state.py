@@ -28,6 +28,11 @@ class AgentState(TypedDict):
     # -- File Handling --
     uploaded_file_path: Optional[str] # path to new file for ingesting
 
+    # -- Streaming progress --
+    # When set, agent nodes emit progress events to chat.progress for the
+    # streaming view to consume. None for non-streaming runs (tests, CLI).
+    run_id: Optional[str]
+
     # -- Final Output --
     final_answer: str
     generated_file_path: Optional[str]  # path to primary generated output file (DOCX for plans)

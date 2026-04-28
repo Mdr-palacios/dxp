@@ -4,6 +4,7 @@ load_dotenv()
 from langgraph.graph import StateGraph, END
 from .state import AgentState
 from ..utils.llm_config import get_completion_client
+from ..progress import emit as _emit_progress
 
 from .researcher import research_node
 from .ingestor import ingestor_node
@@ -15,6 +16,53 @@ from .export import export_node
 from .election_results import ElectionAnalystAgent
 from .voterfile_agent import VoterFileAgent
 from .opposition_research import OppositionResearchAgent
+
+
+# ---------------------------------------------------------------------------
+# Progress-instrumented node wrapper
+# ---------------------------------------------------------------------------
+
+# Human-readable labels for each agent node. Streamed to the client so the
+# trace strip reads like a status feed rather than a list of internal IDs.
+_AGENT_LABELS: dict[str, dict[str, str]] = {
+    "researcher":          {"start": "Searching the corpus",        "done": "Sources gathered"},
+    "ingestor":            {"start": "Reading uploaded file",       "done": "File parsed"},
+    "election_results":    {"start": "Pulling election history",    "done": "Election history loaded"},
+    "opposition_research": {"start": "Loading opposition research", "done": "Opposition brief ready"},
+    "win_number":          {"start": "Calculating the win number",  "done": "Win number set"},
+    "precincts":           {"start": "Ranking target precincts",    "done": "Targets ranked"},
+    "messaging":           {"start": "Drafting messaging",          "done": "Scripts drafted"},
+    "cost_calculator":     {"start": "Pricing the plan",            "done": "Budget priced"},
+    "voter_file":          {"start": "Segmenting your voter file",  "done": "Segments built"},
+    "synthesizer":         {"start": "Writing the deliverable",     "done": "Deliverable ready"},
+}
+
+
+def _label(node: str, kind: str) -> str:
+    return _AGENT_LABELS.get(node, {}).get(kind, node.replace("_", " ").title())
+
+
+def _instrument(node_name: str, fn):
+    """
+    Wrap an agent node function so it emits ``agent_start`` before running
+    and ``agent_done`` after. Honors ``state['run_id']`` — when it is unset
+    the wrapper is a no-op pass-through, so non-streaming callers (tests,
+    CLI) see no behavior change.
+    """
+    def wrapped(state):
+        run_id = state.get("run_id") if isinstance(state, dict) else None
+        if run_id:
+            _emit_progress(run_id, "agent_start", agent=node_name, label=_label(node_name, "start"))
+        try:
+            result = fn(state)
+        except Exception as exc:
+            if run_id:
+                _emit_progress(run_id, "agent_error", agent=node_name, label=str(exc))
+            raise
+        if run_id:
+            _emit_progress(run_id, "agent_done", agent=node_name, label=_label(node_name, "done"))
+        return result
+    return wrapped
 
 
 # Define LLM and temperature for workflow
@@ -304,17 +352,21 @@ workflow = StateGraph(AgentState)
 workflow.add_node("triage_router", lambda state: state)
 workflow.add_node("intent_router", intent_router_node)
 
-workflow.add_node("researcher", research_node)
-workflow.add_node("ingestor", ingestor_node)
-workflow.add_node("precincts", PrecinctsAgent.run)
-workflow.add_node("win_number", WinNumberAgent.run)
-workflow.add_node("messaging", messaging_node)
-workflow.add_node("cost_calculator", finance_node)
-workflow.add_node("election_results", ElectionAnalystAgent.run)
-workflow.add_node("opposition_research", OppositionResearchAgent.run)
-workflow.add_node("voter_file", VoterFileAgent.run)
+# Each leaf agent is wrapped with ``_instrument`` so it emits start/done
+# progress events to the streaming queue. The wrapper is a no-op when
+# ``state['run_id']`` is unset, so direct ``manager_app.invoke`` callers
+# (tests, CLI) get the original behavior unchanged.
+workflow.add_node("researcher",          _instrument("researcher",          research_node))
+workflow.add_node("ingestor",            _instrument("ingestor",            ingestor_node))
+workflow.add_node("precincts",           _instrument("precincts",           PrecinctsAgent.run))
+workflow.add_node("win_number",          _instrument("win_number",          WinNumberAgent.run))
+workflow.add_node("messaging",           _instrument("messaging",           messaging_node))
+workflow.add_node("cost_calculator",     _instrument("cost_calculator",     finance_node))
+workflow.add_node("election_results",    _instrument("election_results",    ElectionAnalystAgent.run))
+workflow.add_node("opposition_research", _instrument("opposition_research", OppositionResearchAgent.run))
+workflow.add_node("voter_file",          _instrument("voter_file",          VoterFileAgent.run))
 
-workflow.add_node("synthesizer", export_node)
+workflow.add_node("synthesizer", _instrument("synthesizer", export_node))
 
 # workflow.add_node("export", export_node)
 
@@ -414,5 +466,44 @@ def run_query(
         config={"recursion_limit": recursion_limit},
     )
     # Surface the namespace so callers can log/audit which org was served
+    result["org_namespace"] = org_namespace
+    return result
+
+
+# ---------------------------------------------------------------------------
+# Streaming variant
+# ---------------------------------------------------------------------------
+
+def run_query_streaming(
+    query: str,
+    org_namespace: str,
+    run_id: str,
+    output_format: str = "markdown",
+    uploaded_file_path: str | None = None,
+    recursion_limit: int = 50,
+) -> dict:
+    """
+    Streaming variant of ``run_query``. Identical execution path, but the
+    instrumented node wrappers (set up at module load) emit start/done
+    progress events to the ``chat.progress`` queue keyed on ``run_id``.
+    The streaming view drains that queue into an SSE feed for the browser.
+
+    Returns the same final state dict as ``run_query`` once the run
+    completes. If the run raises, the wrapper has already emitted an
+    ``agent_error`` event before the exception propagates.
+    """
+    initial_state: dict = {
+        "query":         query,
+        "org_namespace": org_namespace,
+        "output_format": output_format,
+        "run_id":        run_id,
+    }
+    if uploaded_file_path:
+        initial_state["uploaded_file_path"] = uploaded_file_path
+
+    result = manager_app.invoke(
+        initial_state,
+        config={"recursion_limit": recursion_limit},
+    )
     result["org_namespace"] = org_namespace
     return result
