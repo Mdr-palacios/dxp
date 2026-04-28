@@ -413,71 +413,139 @@
     display: flex;
     flex-direction: column;
     align-items: center;
-    justify-content: center;
-    height: 100%;
+    justify-content: flex-start;
+    min-height: 100%;
     text-align: center;
-    padding: 2rem;
+    padding: 2.25rem 1.5rem 3rem;
     color: var(--text-muted);
+    gap: 1.25rem;
+  }
+  .empty-hero {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.5rem;
+    max-width: 560px;
+  }
+  .empty-hero-icon {
+    width: 44px; height: 44px;
+    border-radius: 12px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--accent);
+    margin-bottom: 0.25rem;
   }
   .empty-state h2 {
-    color: var(--text-secondary);
-    font-size: 1.1rem;
+    color: var(--text-primary, var(--text-secondary));
+    font-size: 1.15rem;
     font-weight: 600;
-    margin: 1rem 0 0.4rem;
+    margin: 0.25rem 0 0.15rem;
+    letter-spacing: -0.01em;
   }
-  .empty-state p { font-size: 0.82rem; line-height: 1.6; max-width: 320px; }
+  .empty-subtitle {
+    color: var(--text-muted);
+    font-size: 0.85rem;
+    line-height: 1.55;
+    max-width: 460px;
+    margin: 0;
+  }
+  .empty-hint {
+    color: var(--text-muted);
+    font-size: 0.72rem;
+    margin: 0.25rem 0 0;
+    opacity: 0.85;
+  }
 
-  /* ── Demo card (one-click prompt loader) ─────────────────────── */
-  .demo-card {
-    margin-top: 1.5rem;
+  /* Demo carousel: 5 prompt tiles, responsive grid */
+  .demo-carousel {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.75rem;
     width: 100%;
-    max-width: 520px;
+    max-width: 920px;
+    margin: 0.25rem auto 0;
+  }
+  .demo-tile {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.5rem;
+    text-align: left;
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: 12px;
-    padding: 1rem 1.1rem;
-    text-align: left;
+    padding: 0.85rem 0.95rem 0.95rem;
+    color: inherit;
+    cursor: pointer;
+    transition: border-color 0.15s, transform 0.12s, background 0.15s;
+    font: inherit;
   }
-  .demo-card-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    gap: 0.5rem;
-    margin-bottom: 0.5rem;
+  .demo-tile:hover {
+    border-color: var(--accent);
+    transform: translateY(-1px);
   }
-  .demo-card-label {
-    font-size: 0.7rem;
+  .demo-tile:focus-visible {
+    outline: 2px solid var(--accent);
+    outline-offset: 2px;
+  }
+  .demo-tile-chip {
+    display: inline-block;
+    font-size: 0.66rem;
     font-weight: 600;
-    letter-spacing: 0.06em;
+    letter-spacing: 0.05em;
     text-transform: uppercase;
-    color: var(--accent);
+    padding: 0.18rem 0.5rem;
+    border-radius: 999px;
+    border: 1px solid transparent;
   }
-  .demo-card-prompt {
+  .demo-tile-chip--plan { background: rgba(59, 130, 246, 0.12); color: #3b82f6; border-color: rgba(59, 130, 246, 0.28); }
+  .demo-tile-chip--win  { background: rgba(34, 197, 94, 0.12); color: #22c55e; border-color: rgba(34, 197, 94, 0.28); }
+  .demo-tile-chip--opp  { background: rgba(239, 68, 68, 0.12); color: #ef4444; border-color: rgba(239, 68, 68, 0.28); }
+  .demo-tile-chip--lang { background: rgba(168, 85, 247, 0.12); color: #a855f7; border-color: rgba(168, 85, 247, 0.28); }
+  .demo-tile-chip--vf   { background: rgba(245, 158, 11, 0.14); color: #d97706; border-color: rgba(245, 158, 11, 0.30); }
+  .demo-tile-headline {
+    font-size: 0.86rem;
+    font-weight: 600;
+    line-height: 1.35;
     color: var(--text-secondary);
-    font-size: 0.82rem;
-    line-height: 1.55;
-    margin: 0 0 0.75rem;
-    font-style: italic;
   }
-  .demo-card-btn {
+  .demo-tile-preview {
+    font-size: 0.76rem;
+    line-height: 1.5;
+    color: var(--text-muted);
+  }
+
+  /* Voter file chip (demo mode only): persistent affordance above input */
+  .vf-chip-row {
+    display: flex;
+    justify-content: center;
+    margin: 0 0 0.5rem;
+  }
+  .vf-chip {
     display: inline-flex;
     align-items: center;
-    gap: 0.4rem;
-    background: var(--accent);
-    color: #fff;
-    border: none;
-    border-radius: 8px;
-    padding: 0.5rem 0.875rem;
-    font-size: 0.78rem;
-    font-weight: 600;
-    cursor: pointer;
-    transition: background 0.15s;
-  }
-  .demo-card-btn:hover { background: var(--accent-hover); }
-  .demo-card-hint {
+    gap: 0.5rem;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    padding: 0.32rem 0.7rem 0.32rem 0.55rem;
+    font-size: 0.74rem;
     color: var(--text-muted);
-    font-size: 0.7rem;
-    margin: 0.5rem 0 0;
+    line-height: 1.2;
+  }
+  .vf-chip-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #22c55e;
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.55);
+    animation: vf-chip-pulse 2.4s ease-in-out infinite;
+    flex: none;
+  }
+  .vf-chip-strong { color: var(--text-secondary); font-weight: 600; }
+  @keyframes vf-chip-pulse {
+    0%, 100% { box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.45); }
+    50%      { box-shadow: 0 0 0 6px rgba(34, 197, 94, 0); }
   }
 
   /* ── HTMX loading indicator on send btn ─────────────────────── */
@@ -586,39 +654,61 @@
           {% endfor %}
 
         {% else %}
-          <!-- Empty state -->
+          {# Restructured empty state (Milestone B): tighter hero, then a   #}
+          {# carousel of 5 demo prompts that exercise different agent paths #}
+          {# (full plan, win-number, opposition, multilingual, voter file). #}
+          {# Tiles pre-fill the textarea but never auto-submit, so the      #}
+          {# operator can edit live before sending. #}
           <div class="empty-state" id="empty-state">
-            <div style="
-              width:52px; height:52px;
-              background:var(--accent-glow);
-              border:1px solid rgba(59,130,246,0.25);
-              border-radius:14px;
-              display:flex; align-items:center; justify-content:center;
-            ">
-              <svg width="26" height="26" viewBox="0 0 20 20" fill="none">
-                <rect width="20" height="20" rx="5" fill="var(--accent)"/>
-                <path d="M7 16.5V3.5a5.5 4 0 0 1 0 8" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
-              </svg>
-            </div>
-            <h2>What can I help you win?</h2>
-            <p>Ask about win numbers, target precincts, district research, messaging, or upload a voter file to get started.</p>
-
-            <!-- One-click demo prompt: pre-fills the textarea so the operator
-                 can review, edit, and send. Intentionally not auto-submitted
-                 so the audience sees the prompt before the run. -->
-            <div class="demo-card">
-              <div class="demo-card-header">
-                <span class="demo-card-label">Run the demo</span>
-              </div>
-              <p class="demo-card-prompt" id="demo-prompt-text">Build a Gwinnett County GOTV plan targeting Latinx voters age 18 to 35. Generate a Spanish door-knock script and give me a CSV of the target list.</p>
-              <button type="button" class="demo-card-btn" id="demo-load-btn" aria-label="Load the Gwinnett demo prompt into the input box">
-                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                  <path d="M3 8h10M9 4l4 4-4 4"/>
+            <div class="empty-hero">
+              <div class="empty-hero-icon" aria-hidden="true">
+                <svg width="22" height="22" viewBox="0 0 20 20" fill="none">
+                  <rect width="20" height="20" rx="5" fill="var(--accent)"/>
+                  <path d="M7 16.5V3.5a5.5 4 0 0 1 0 8" stroke="#fff" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"/>
                 </svg>
-                Load this prompt
-              </button>
-              <p class="demo-card-hint">Loads into the input box, edit anything, then hit send.</p>
+              </div>
+              <h2>What can I help you win?</h2>
+              <p class="empty-subtitle">Pick a starter below or ask your own question.</p>
             </div>
+
+            <div class="demo-carousel" role="list" aria-label="Demo prompts">
+              <button type="button" class="demo-tile" role="listitem"
+                data-prompt="Build a Gwinnett County GOTV plan targeting Latinx voters age 18 to 35. Generate a Spanish door-knock script and give me a CSV of the target list.">
+                <span class="demo-tile-chip demo-tile-chip--plan">Full plan</span>
+                <span class="demo-tile-headline">Gwinnett GOTV, Latinx 18 to 35</span>
+                <span class="demo-tile-preview">Spanish door-knock script and a CSV target list.</span>
+              </button>
+
+              <button type="button" class="demo-tile" role="listitem"
+                data-prompt="What is the win number for Georgia's 7th Congressional District in a midterm cycle? Show me the math.">
+                <span class="demo-tile-chip demo-tile-chip--win">Win number</span>
+                <span class="demo-tile-headline">Win number for GA-07, midterm</span>
+                <span class="demo-tile-preview">Quick lookup, shows CVAP and turnout math.</span>
+              </button>
+
+              <button type="button" class="demo-tile" role="listitem"
+                data-prompt="Pull opposition research on the Republican candidate in Georgia's 6th Congressional District. Give me the top vulnerabilities and three contrast messaging angles.">
+                <span class="demo-tile-chip demo-tile-chip--opp">Opposition</span>
+                <span class="demo-tile-headline">GOP opponent in GA-06</span>
+                <span class="demo-tile-preview">Vulnerabilities and contrast angles from research books.</span>
+              </button>
+
+              <button type="button" class="demo-tile" role="listitem"
+                data-prompt="Draft a Vietnamese-language text message to AAPI voters in Gwinnett about early voting locations and hours.">
+                <span class="demo-tile-chip demo-tile-chip--lang">Multilingual</span>
+                <span class="demo-tile-headline">Vietnamese text to AAPI voters</span>
+                <span class="demo-tile-preview">Tests language detection plus messaging agent.</span>
+              </button>
+
+              <button type="button" class="demo-tile" role="listitem"
+                data-prompt="Segment my voter file by age cohort and party, then match each segment to the right canvassing script and turnout tactic.">
+                <span class="demo-tile-chip demo-tile-chip--vf">Voter file</span>
+                <span class="demo-tile-headline">Segment my list and match scripts</span>
+                <span class="demo-tile-preview">Uses the attached synthetic voterfile in demo mode.</span>
+              </button>
+            </div>
+
+            <p class="empty-hint">Loads into the input box. Edit anything, then hit send.</p>
           </div>
         {% endif %}
 
@@ -655,6 +745,17 @@
     <!-- ── Input bar ───────────────────────────────────────────── -->
     <div class="input-bar">
       <div class="input-inner">
+
+        {% if DEMO_MODE %}
+        {# Demo mode shows a persistent voterfile chip so the audience knows  #}
+        {# segmentation queries are running against real (synthetic) data.    #}
+        <div class="vf-chip-row" aria-live="polite">
+          <span class="vf-chip" title="Synthetic Gwinnett County voterfile, attached for the duration of the demo">
+            <span class="vf-chip-dot" aria-hidden="true"></span>
+            <span><span class="vf-chip-strong">Synthetic voterfile</span>, 50K Gwinnett rows attached</span>
+          </span>
+        </div>
+        {% endif %}
 
         <form
           id="chat-form"
@@ -966,16 +1067,13 @@
     }
   });
 
-  /* ── One-click demo loader ────────────────────────────────────── */
-  // Pre-fills the textarea with the Gwinnett demo prompt and focuses it.
-  // Intentionally does NOT auto-submit, so the operator can show the prompt
-  // to the audience and edit it live ("watch what happens if I change Latinx
-  // to AAPI" or "if I switch the language to Vietnamese").
-  const demoBtn = document.getElementById('demo-load-btn');
-  if (demoBtn) {
-    demoBtn.addEventListener('click', function () {
-      const promptEl = document.getElementById('demo-prompt-text');
-      const promptText = promptEl ? promptEl.textContent.trim() : '';
+  /* ── Demo carousel loader ────────────────────────────────────── */
+  // Each .demo-tile carries its prompt in data-prompt. Click pre-fills the
+  // textarea and focuses it. Intentionally does NOT auto-submit, so the
+  // operator can edit live before sending ("swap Latinx for AAPI", etc).
+  document.querySelectorAll('.demo-tile').forEach(function (tile) {
+    tile.addEventListener('click', function () {
+      const promptText = (tile.dataset.prompt || '').trim();
       if (!promptText) return;
       textarea.value = promptText;
       autoResize();
@@ -983,7 +1081,7 @@
       // Scroll the textarea into view in case the empty state pushed it off-screen.
       textarea.scrollIntoView({ behavior: 'smooth', block: 'center' });
     });
-  }
+  });
 
   /* ── Scroll to bottom on initial load ─────────────────────────── */
   scrollToBottom();
