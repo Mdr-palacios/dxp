@@ -1,12 +1,10 @@
-# [APP_NAME]
+# Powerbuilder
 
 **An AI-orchestrated civic engagement platform for nonpartisan voter outreach, education, and field operations.**
 
-[APP_NAME] is a Django + LangGraph application that coordinates a team of specialist AI agents (researcher, win-number, precincts, messaging, opposition research, voter-file analyst, and more) to generate full civic engagement plans, segment-targeted messaging, and budget estimates from a single natural-language request. The current public deployment lives at [powerbuilder.app](https://powerbuilder.app).
+Powerbuilder is a Django + LangGraph application that coordinates a team of specialist AI agents (researcher, win-number, precincts, messaging, opposition research, voter-file analyst, and more) to generate full civic engagement plans, segment-targeted messaging, and budget estimates from a single natural-language request. The current public deployment lives at [powerbuilder.app](https://powerbuilder.app).
 
 Built by [Benjamin Oh](https://github.com/benoh20) and [Rosario Palacios](https://github.com/Mdr-palacios) as part of the **DxP Fellowship**.
-
-> **Note on naming:** `[APP_NAME]` is a placeholder. The fellowship is DxP; the app does not yet have a final name. Find-and-replace `[APP_NAME]` once a name is chosen.
 
 ---
 
@@ -16,11 +14,11 @@ An organizer or program manager types a request in plain English (or Spanish):
 
 > "Build me a Gwinnett County GOTV plan targeting Latinx voters 18-35 with a Spanish door-knock script and a CSV export."
 
-[APP_NAME] routes the request through a LangGraph orchestrator that decides which specialist agents to call, in what order. Each agent writes its findings back to a shared whiteboard (`AgentState`). A synthesizer agent assembles the final deliverable (Markdown, DOCX, or CSV), grounded in research drawn from a curated Pinecone-backed corpus and live data sources (US Census, FEC, ChangeAgent).
+Powerbuilder routes the request through a LangGraph orchestrator that decides which specialist agents to call, in what order. Each agent writes its findings back to a shared whiteboard (`AgentState`). A synthesizer agent assembles the final deliverable (Markdown, DOCX, or CSV), grounded in research drawn from a curated Pinecone-backed corpus and live data sources (US Census, FEC, ChangeAgent).
 
 ## Why it exists
 
-Most civic technology is sold to large institutions and staffed by analysts. The independent organizer, the community-based field program, and the local nonpartisan voter education effort rarely have access to the same caliber of strategic planning or research synthesis. [APP_NAME] exists to close that gap with software that does the work of a junior strategist, a research analyst, and a field director, without replacing any of them.
+Most civic technology is sold to large institutions and staffed by analysts. The independent organizer, the community-based field program, and the local nonpartisan voter education effort rarely have access to the same caliber of strategic planning or research synthesis. Powerbuilder exists to close that gap with software that does the work of a junior strategist, a research analyst, and a field director, without replacing any of them.
 
 ---
 
@@ -69,7 +67,7 @@ Most civic technology is sold to large institutions and staffed by analysts. The
 
 ### Data isolation
 
-Every Pinecone read and write is scoped to an `org_namespace` derived from the authenticated user's email domain. The `__default__` namespace holds the curated public corpus (American Bridge research books, Analyst Institute briefs, the [APP_NAME] best-practices set). Per-org uploads never leave their namespace.
+Every Pinecone read and write is scoped to an `org_namespace` derived from the authenticated user's email domain. The `__default__` namespace holds the curated public corpus (American Bridge research books, Analyst Institute briefs, the Powerbuilder best-practices set). Per-org uploads never leave their namespace.
 
 Voter file data is processed in-memory and discarded at the end of the request. Nothing is persisted.
 

@@ -1,4 +1,4 @@
-# [APP_NAME] Demo: Run-of-Show
+# Powerbuilder Demo: Run-of-Show
 
 **Audience:** Funders, partner organizations, prospective clients, advisory board.
 **Length:** 10-12 minutes live; 5 minutes for the short version.
@@ -19,7 +19,7 @@
 
 ## The story (90-second narrator intro)
 
-> We built [APP_NAME] because the strategic planning and research synthesis available to large, well-resourced civic programs should also be available to a county-level voter education effort, a community-based organizing group, or a local nonprofit running a nonpartisan turnout push.
+> We built Powerbuilder because the strategic planning and research synthesis available to large, well-resourced civic programs should also be available to a county-level voter education effort, a community-based organizing group, or a local nonprofit running a nonpartisan turnout push.
 >
 > Today I'll walk you through one real workflow: an organizer in Gwinnett County, Georgia wants a get-out-the-vote plan for Latinx voters age 18 to 35, with a Spanish door-knock script and an exportable target list. In a traditional shop this is a week of analyst time. We're going to do it in about three minutes.
 
@@ -93,7 +93,7 @@ A: No. It does the work that would otherwise not happen at all: the rural county
 A: Spanish, Mandarin, Vietnamese, Korean today. Adding a language is a one-file change in `chat/agents/messaging.py` (we just register the language code and a short style note). Any language is feasible; we prioritized the ones with the largest non-English-speaking populations in Gwinnett and similar Sun Belt suburbs.
 
 **Q: How is this different from [generic AI chat product]?**
-A: A generic chat product gives you a paragraph. [APP_NAME] gives you a plan, a script in the right language, a cost model, and a target CSV, grounded in field-tested research, in the time it takes to ask. The orchestration layer is the product.
+A: A generic chat product gives you a paragraph. Powerbuilder gives you a plan, a script in the right language, a cost model, and a target CSV, grounded in field-tested research, in the time it takes to ask. The orchestration layer is the product.
 
 **Q: What's the business model?**
 A: We're designing this for nonpartisan civic engagement nonprofits, the 501(c)(3) world: voter education programs, community-based organizations, civic research groups, and coalitions doing nonpartisan turnout work. We're still finalizing pricing, but the direction is a tiered subscription scaled to program size rather than seat count, so field teams aren't penalized for adding volunteers. The fellowship-stage version you're seeing today is being shared with a small set of partner organizations for feedback and case studies.

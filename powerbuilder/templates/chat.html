@@ -324,6 +324,59 @@
   }
   .empty-state p { font-size: 0.82rem; line-height: 1.6; max-width: 320px; }
 
+  /* ── Demo card (one-click prompt loader) ─────────────────────── */
+  .demo-card {
+    margin-top: 1.5rem;
+    width: 100%;
+    max-width: 520px;
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 1rem 1.1rem;
+    text-align: left;
+  }
+  .demo-card-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    margin-bottom: 0.5rem;
+  }
+  .demo-card-label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--accent);
+  }
+  .demo-card-prompt {
+    color: var(--text-secondary);
+    font-size: 0.82rem;
+    line-height: 1.55;
+    margin: 0 0 0.75rem;
+    font-style: italic;
+  }
+  .demo-card-btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    background: var(--accent);
+    color: #fff;
+    border: none;
+    border-radius: 8px;
+    padding: 0.5rem 0.875rem;
+    font-size: 0.78rem;
+    font-weight: 600;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .demo-card-btn:hover { background: var(--accent-hover); }
+  .demo-card-hint {
+    color: var(--text-muted);
+    font-size: 0.7rem;
+    margin: 0.5rem 0 0;
+  }
+
   /* ── HTMX loading indicator on send btn ─────────────────────── */
   .htmx-request .send-btn { background: var(--text-muted); cursor: not-allowed; }
 </style>
@@ -434,7 +487,24 @@
               </svg>
             </div>
             <h2>What can I help you win?</h2>
-            <p>Ask about win numbers, target precincts, opposition research, messaging, or upload a voter file to get started.</p>
+            <p>Ask about win numbers, target precincts, district research, messaging, or upload a voter file to get started.</p>
+
+            <!-- One-click demo prompt: pre-fills the textarea so the operator
+                 can review, edit, and send. Intentionally not auto-submitted
+                 so the audience sees the prompt before the run. -->
+            <div class="demo-card">
+              <div class="demo-card-header">
+                <span class="demo-card-label">Run the demo</span>
+              </div>
+              <p class="demo-card-prompt" id="demo-prompt-text">Build a Gwinnett County GOTV plan targeting Latinx voters age 18 to 35. Generate a Spanish door-knock script and give me a CSV of the target list.</p>
+              <button type="button" class="demo-card-btn" id="demo-load-btn" aria-label="Load the Gwinnett demo prompt into the input box">
+                <svg width="13" height="13" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M3 8h10M9 4l4 4-4 4"/>
+                </svg>
+                Load this prompt
+              </button>
+              <p class="demo-card-hint">Loads into the input box, edit anything, then hit send.</p>
+            </div>
           </div>
         {% endif %}
 
@@ -467,15 +537,19 @@
           hx-swap="beforeend"
         >
           {% csrf_token %}
+          {% if not DEMO_MODE %}
           <input type="file" id="file-input" name="file" class="hidden" accept=".csv,.xlsx,.pdf" aria-label="Attach file">
+          {% endif %}
 
           <div class="input-box">
+            {% if not DEMO_MODE %}
             <!-- Paperclip -->
             <button type="button" class="input-icon-btn" onclick="document.getElementById('file-input').click()" title="Attach file (.csv, .xlsx, .pdf)" aria-label="Attach file">
               <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                 <path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/>
               </svg>
             </button>
+            {% endif %}
 
             <!-- Text input -->
             <textarea
@@ -496,12 +570,14 @@
           </div>
         </form>
 
+        {% if not DEMO_MODE %}
         <!-- File badge -->
         <div id="file-badge">
           <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M21.44 11.05l-9.19 9.19a6 6 0 0 1-8.49-8.49l9.19-9.19a4 4 0 0 1 5.66 5.66l-9.2 9.19a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
           <span id="file-name-label"></span>
           <button onclick="clearFile()" title="Remove file">×</button>
         </div>
+        {% endif %}
 
         <p style="color:var(--text-muted); font-size:0.7rem; text-align:center; margin:0.5rem 0 0;">
           Powerbuilder analyzes your query using live Census, FEC, and election data.
@@ -550,18 +626,25 @@
   });
 
   /* ── File input ────────────────────────────────────────────────── */
-  document.getElementById('file-input').addEventListener('change', function () {
-    const file = this.files[0];
-    const badge = document.getElementById('file-badge');
-    if (file) {
-      document.getElementById('file-name-label').textContent = file.name;
-      badge.style.display = 'flex';
-    }
-  });
+  // Demo mode hides the file input entirely. Guard against missing elements
+  // so the script does not throw when the input is absent.
+  const fileInput = document.getElementById('file-input');
+  if (fileInput) {
+    fileInput.addEventListener('change', function () {
+      const file = this.files[0];
+      const badge = document.getElementById('file-badge');
+      if (file && badge) {
+        document.getElementById('file-name-label').textContent = file.name;
+        badge.style.display = 'flex';
+      }
+    });
+  }
 
   window.clearFile = function () {
-    document.getElementById('file-input').value = '';
-    document.getElementById('file-badge').style.display = 'none';
+    const fi = document.getElementById('file-input');
+    if (fi) fi.value = '';
+    const badge = document.getElementById('file-badge');
+    if (badge) badge.style.display = 'none';
   };
 
   /* ── Saved query — injected into HTMX request after form serialization ── */
@@ -637,6 +720,25 @@
       scrollToBottom();
     }
   });
+
+  /* ── One-click demo loader ────────────────────────────────────── */
+  // Pre-fills the textarea with the Gwinnett demo prompt and focuses it.
+  // Intentionally does NOT auto-submit, so the operator can show the prompt
+  // to the audience and edit it live ("watch what happens if I change Latinx
+  // to AAPI" or "if I switch the language to Vietnamese").
+  const demoBtn = document.getElementById('demo-load-btn');
+  if (demoBtn) {
+    demoBtn.addEventListener('click', function () {
+      const promptEl = document.getElementById('demo-prompt-text');
+      const promptText = promptEl ? promptEl.textContent.trim() : '';
+      if (!promptText) return;
+      textarea.value = promptText;
+      autoResize();
+      textarea.focus();
+      // Scroll the textarea into view in case the empty state pushed it off-screen.
+      textarea.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
+  }
 
   /* ── Scroll to bottom on initial load ─────────────────────────── */
   scrollToBottom();
