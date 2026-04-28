@@ -29,7 +29,7 @@ os.environ.pop("PINECONE_API_KEY", None)
 def main() -> int:
     failures: list[str] = []
 
-    # 1. Local index exists and has chunks across all 9 source files.
+    # 1. Local index exists and has chunks across all 10 source files.
     index_path = SCRIPT_DIR / ".local_corpus_index.json"
     if not index_path.exists():
         print(f"FAIL: local index missing at {index_path}")
@@ -37,11 +37,11 @@ def main() -> int:
         return 1
     payload = json.loads(index_path.read_text())
     chunks = payload["chunks"]
-    if len(chunks) < 9:
-        failures.append(f"expected >=9 chunks, got {len(chunks)}")
+    if len(chunks) < 10:
+        failures.append(f"expected >=10 chunks, got {len(chunks)}")
     sources = {c["metadata"]["source_file"] for c in chunks}
-    if len(sources) != 9:
-        failures.append(f"expected 9 distinct source files, got {len(sources)}: {sources}")
+    if len(sources) != 10:
+        failures.append(f"expected 10 distinct source files, got {len(sources)}: {sources}")
 
     # 2. Frontmatter parsing extracted real titles, not filename fallbacks.
     titles = {c["metadata"].get("title", "") for c in chunks}
@@ -128,6 +128,27 @@ def main() -> int:
             f"Punjabi/gurdwara query did not surface file 09, got {top_files_sikh}"
         )
 
+    # 5e. Rural/exurban queries should surface file 10.
+    results_rural = _local_corpus_search(
+        "How do we cut turf in a rural county where canvassers drive between doors?",
+        k=5,
+    )
+    top_files_rural = [r.metadata.get("source_file", "") for r in results_rural]
+    if not any("rural" in f.lower() or "10_" in f.lower() for f in top_files_rural):
+        failures.append(
+            f"Rural turf-cut query did not surface file 10, got {top_files_rural}"
+        )
+
+    results_exurban = _local_corpus_search(
+        "Exurban precinct organizing, new-mover lists, and HOA subdivisions in Gwinnett's outer tracts",
+        k=5,
+    )
+    top_files_exurban = [r.metadata.get("source_file", "") for r in results_exurban]
+    if not any("rural" in f.lower() or "10_" in f.lower() for f in top_files_exurban):
+        failures.append(
+            f"Exurban query did not surface file 10, got {top_files_exurban}"
+        )
+
     # 6. Score with empty query returns nothing.
     empty_results = _local_corpus_search("", k=5)
     if empty_results:
@@ -148,7 +169,7 @@ def main() -> int:
             print(f"  - {f}")
         return 1
 
-    print("PASS: all 11 assertion groups OK.")
+    print("PASS: all 13 assertion groups OK.")
     return 0
 
 

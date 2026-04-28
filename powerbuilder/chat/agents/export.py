@@ -180,6 +180,7 @@ def _win_table(win_entry: dict) -> tuple:
     rows = [
         ["Win Number (votes needed)",  _fmt_int(win_entry.get("win_number"))],
         ["Projected Turnout",          _fmt_int(win_entry.get("projected_turnout"))],
+        ["Persuadable Universe",       _fmt_int(win_entry.get("persuadable_universe"))],
         ["Voter Universe (CVAP)",      _fmt_int(win_entry.get("voter_universe_cvap"))],
         ["Avg Historical Turnout",     _fmt_pct(win_entry.get("avg_turnout_pct"))],
         ["Victory Margin Target",      _fmt_pct(win_entry.get("victory_margin"))],
