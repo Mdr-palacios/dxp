@@ -25,6 +25,11 @@ class AgentState(TypedDict):
     demographic_intent: Optional[str]  # set by intent_router via keyword scan; "a+b" for combined demographics
     language_intent: Optional[str]     # set by intent_router via keyword scan; ISO 639-1 code (e.g. "es", "en", "zh", "vi", "ko")
 
+    # Milestone K: A/B scaffolding toggle. When True, the messaging agent
+    # produces two variants (A and B) per eligible social-leaning format and
+    # appends a sample-size math block sized for the campaign's audience.
+    ab_test: Optional[bool]
+
     # -- File Handling --
     uploaded_file_path: Optional[str] # path to new file for ingesting
 

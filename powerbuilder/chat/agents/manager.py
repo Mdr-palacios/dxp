@@ -206,6 +206,11 @@ def intent_router_node(state: AgentState):
     # so downstream agents (messaging in particular) can produce non-English copy.
     language = _detect_language_intent(state["query"])
 
+    # Milestone K: pass-through A/B-test flag. The router does not change
+    # routing based on this; it simply re-emits the value on every return so
+    # downstream nodes see the same flag the view set on initial_state.
+    ab_test = bool(state.get("ab_test")) if state.get("ab_test") is not None else False
+
     # Fast path: skip LLM for unambiguous voter file queries — only when a file
     # is actually present; keyword match alone must not route to voter_file.
     active_agents  = state.get("active_agents", [])
@@ -219,6 +224,7 @@ def intent_router_node(state: AgentState):
             "output_format":      "markdown",
             "demographic_intent": "default",
             "language_intent":    language,
+            "ab_test":            ab_test,
         }
 
     # Fast path: opposition research queries — run election_results first to get
@@ -231,6 +237,7 @@ def intent_router_node(state: AgentState):
                 "output_format":      "markdown",
                 "demographic_intent": demographic,
                 "language_intent":    language,
+                "ab_test":            ab_test,
             }
         if "opposition_research" not in active_agents:
             return {
@@ -238,6 +245,7 @@ def intent_router_node(state: AgentState):
                 "output_format":      "markdown",
                 "demographic_intent": demographic,
                 "language_intent":    language,
+                "ab_test":            ab_test,
             }
 
     # Fast path: voter file sequence (no district) — after voter_file, force
@@ -245,12 +253,12 @@ def intent_router_node(state: AgentState):
     if "voter_file" in active_agents and not _has_district_reference(state["query"]):
         demographic = _detect_demographic_intent(state["query"])
         if "researcher" not in active_agents:
-            return {"router_decision": "researcher",       "output_format": "markdown", "demographic_intent": demographic, "language_intent": language}
+            return {"router_decision": "researcher",       "output_format": "markdown", "demographic_intent": demographic, "language_intent": language, "ab_test": ab_test}
         if "messaging" not in active_agents:
-            return {"router_decision": "messaging",        "output_format": "markdown", "demographic_intent": demographic, "language_intent": language}
+            return {"router_decision": "messaging",        "output_format": "markdown", "demographic_intent": demographic, "language_intent": language, "ab_test": ab_test}
         if "cost_calculator" not in active_agents:
-            return {"router_decision": "cost_calculator",  "output_format": "markdown", "demographic_intent": demographic, "language_intent": language}
-        return     {"router_decision": "finish",           "output_format": "markdown", "demographic_intent": demographic, "language_intent": language}
+            return {"router_decision": "cost_calculator",  "output_format": "markdown", "demographic_intent": demographic, "language_intent": language, "ab_test": ab_test}
+        return     {"router_decision": "finish",           "output_format": "markdown", "demographic_intent": demographic, "language_intent": language, "ab_test": ab_test}
 
     llm = get_model()
 
@@ -343,6 +351,7 @@ def intent_router_node(state: AgentState):
         "output_format":      fmt,
         "demographic_intent": _detect_demographic_intent(state["query"]),
         "language_intent":    language,
+        "ab_test":            ab_test,
     }
 
 # Constructing workflow for user request
@@ -433,6 +442,7 @@ def run_query(
     output_format: str = "markdown",
     uploaded_file_path: str | None = None,
     recursion_limit: int = 50,
+    ab_test: bool = False,
 ) -> dict:
     """
     Execute the Powerbuilder pipeline for a single user query.
@@ -457,6 +467,10 @@ def run_query(
         "query":         query,
         "org_namespace": org_namespace,
         "output_format": output_format,
+        # Milestone K: A/B test flag flows through to messaging_node, which
+        # branches the prompt to ask the LLM for two variants on every
+        # eligible social-leaning format. False is a safe default.
+        "ab_test":       bool(ab_test),
     }
     if uploaded_file_path:
         initial_state["uploaded_file_path"] = uploaded_file_path
@@ -481,6 +495,7 @@ def run_query_streaming(
     output_format: str = "markdown",
     uploaded_file_path: str | None = None,
     recursion_limit: int = 50,
+    ab_test: bool = False,
 ) -> dict:
     """
     Streaming variant of ``run_query``. Identical execution path, but the
@@ -497,6 +512,8 @@ def run_query_streaming(
         "org_namespace": org_namespace,
         "output_format": output_format,
         "run_id":        run_id,
+        # Milestone K: same A/B flag handling as run_query.
+        "ab_test":       bool(ab_test),
     }
     if uploaded_file_path:
         initial_state["uploaded_file_path"] = uploaded_file_path
