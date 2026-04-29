@@ -19,10 +19,6 @@ services:
     branch: main               # Auto-deploy on every push to main
     autoDeploy: true
 
-    # Pin the Python version so build output is reproducible. 3.12 matches
-    # what the droplet runs and what we develop against locally.
-    pythonVersion: "3.12"
-
     # Build phase runs on every deploy:
     #   1. Install Python deps
     #   2. Collect static files into staticfiles/ (WhiteNoise serves these)
@@ -59,6 +55,12 @@ services:
     healthCheckPath: /login/
 
     envVars:
+      # Pin the Python version so build output is reproducible. 3.12 matches
+      # what the droplet runs and what we develop against locally. Render
+      # reads PYTHON_VERSION as an env var, not as a top-level service field.
+      - key: PYTHON_VERSION
+        value: "3.12"
+
       # Render-injected: a long random string. Generated once and stored.
       - key: SECRET_KEY
         generateValue: true
