@@ -257,11 +257,15 @@ def intent_router_node(state: AgentState):
     # so downstream agents (messaging in particular) can produce non-English copy.
     language = _detect_language_intent(state["query"])
 
+    # Milestone K: pass-through A/B-test flag. The router does not change
+    # routing based on this; it simply re-emits the value on every return so
+    # downstream nodes see the same flag the view set on initial_state.
+    ab_test = bool(state.get("ab_test")) if state.get("ab_test") is not None else False
     # Milestone L: resolve plan mode once. An explicit override from the UI
     # toggle (passed via state['plan_mode'] by run_query/run_query_streaming)
     # always wins over query-keyword detection. Once resolved, the value is
-    # threaded through every return path below so downstream agents — and
-    # particularly the messaging agent — see the same mode.
+    # threaded through every return path below so downstream agents (and
+    # particularly the messaging agent) see the same mode.
     plan_mode = _detect_plan_mode(state["query"], state.get("plan_mode"))
 
     # Fast path: skip LLM for unambiguous voter file queries — only when a file
@@ -277,6 +281,7 @@ def intent_router_node(state: AgentState):
             "output_format":      "markdown",
             "demographic_intent": "default",
             "language_intent":    language,
+            "ab_test":            ab_test,
             "plan_mode":          plan_mode,
         }
 
@@ -290,6 +295,7 @@ def intent_router_node(state: AgentState):
                 "output_format":      "markdown",
                 "demographic_intent": demographic,
                 "language_intent":    language,
+                "ab_test":            ab_test,
                 "plan_mode":          plan_mode,
             }
         if "opposition_research" not in active_agents:
@@ -298,6 +304,7 @@ def intent_router_node(state: AgentState):
                 "output_format":      "markdown",
                 "demographic_intent": demographic,
                 "language_intent":    language,
+                "ab_test":            ab_test,
                 "plan_mode":          plan_mode,
             }
 
@@ -306,12 +313,12 @@ def intent_router_node(state: AgentState):
     if "voter_file" in active_agents and not _has_district_reference(state["query"]):
         demographic = _detect_demographic_intent(state["query"])
         if "researcher" not in active_agents:
-            return {"router_decision": "researcher",       "output_format": "markdown", "demographic_intent": demographic, "language_intent": language, "plan_mode": plan_mode}
+            return {"router_decision": "researcher",       "output_format": "markdown", "demographic_intent": demographic, "language_intent": language, "ab_test": ab_test, "plan_mode": plan_mode}
         if "messaging" not in active_agents:
-            return {"router_decision": "messaging",        "output_format": "markdown", "demographic_intent": demographic, "language_intent": language, "plan_mode": plan_mode}
+            return {"router_decision": "messaging",        "output_format": "markdown", "demographic_intent": demographic, "language_intent": language, "ab_test": ab_test, "plan_mode": plan_mode}
         if "cost_calculator" not in active_agents:
-            return {"router_decision": "cost_calculator",  "output_format": "markdown", "demographic_intent": demographic, "language_intent": language, "plan_mode": plan_mode}
-        return     {"router_decision": "finish",           "output_format": "markdown", "demographic_intent": demographic, "language_intent": language, "plan_mode": plan_mode}
+            return {"router_decision": "cost_calculator",  "output_format": "markdown", "demographic_intent": demographic, "language_intent": language, "ab_test": ab_test, "plan_mode": plan_mode}
+        return     {"router_decision": "finish",           "output_format": "markdown", "demographic_intent": demographic, "language_intent": language, "ab_test": ab_test, "plan_mode": plan_mode}
 
     llm = get_model()
 
@@ -404,6 +411,7 @@ def intent_router_node(state: AgentState):
         "output_format":      fmt,
         "demographic_intent": _detect_demographic_intent(state["query"]),
         "language_intent":    language,
+        "ab_test":            ab_test,
         "plan_mode":          plan_mode,
     }
 
@@ -495,6 +503,7 @@ def run_query(
     output_format: str = "markdown",
     uploaded_file_path: str | None = None,
     recursion_limit: int = 50,
+    ab_test: bool = False,
     plan_mode: str | None = None,
 ) -> dict:
     """
@@ -520,9 +529,13 @@ def run_query(
         "query":         query,
         "org_namespace": org_namespace,
         "output_format": output_format,
+        # Milestone K: A/B test flag flows through to messaging_node, which
+        # branches the prompt to ask the LLM for two variants on every
+        # eligible social-leaning format. False is a safe default.
+        "ab_test":       bool(ab_test),
         # Milestone L: pin the plan mode for this run. Defensive normalization
-        # in case the view passed an unrecognized string — router will also
-        # normalize, but doing it here keeps state clean from the start.
+        # in case the view passed an unrecognized string (router will also
+        # normalize, but doing it here keeps state clean from the start).
         "plan_mode":     _normalize_plan_mode(plan_mode),
     }
     if uploaded_file_path:
@@ -548,6 +561,7 @@ def run_query_streaming(
     output_format: str = "markdown",
     uploaded_file_path: str | None = None,
     recursion_limit: int = 50,
+    ab_test: bool = False,
     plan_mode: str | None = None,
 ) -> dict:
     """
@@ -565,6 +579,8 @@ def run_query_streaming(
         "org_namespace": org_namespace,
         "output_format": output_format,
         "run_id":        run_id,
+        # Milestone K: same A/B flag handling as run_query.
+        "ab_test":       bool(ab_test),
         # Milestone L: same plan mode handling as run_query.
         "plan_mode":     _normalize_plan_mode(plan_mode),
     }

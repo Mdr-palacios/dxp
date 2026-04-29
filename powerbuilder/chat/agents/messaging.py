@@ -24,6 +24,16 @@ load_dotenv()
 from ..utils.llm_config import get_completion_client
 
 from .state import AgentState
+from .ab_scaffolding import (
+    AB_PROMPT_INSTRUCTION,
+    AB_ELIGIBLE_FORMATS,
+    DEFAULT_BASELINE_RATE,
+    DEFAULT_MDE,
+    _normalize_ab_test,
+    is_ab_eligible,
+    split_variants,
+    format_ab_math_block,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -587,6 +597,10 @@ def messaging_node(state: AgentState) -> dict:
         language_code = "en"
     language_name, language_style = LANGUAGE_LABELS[language_code]
 
+    # Milestone K: A/B scaffolding flag. When True, the prompt asks for two
+    # variants on every eligible social-leaning format and we annotate the
+    # rendered output with explicit Variant A / Variant B labels.
+    ab_test = _normalize_ab_test(state.get("ab_test"))
     # Milestone L: strategic-frame mode toggle. Defensive normalization so a
     # malformed payload (None, unknown string) reverts to 'auto'.
     plan_mode = _normalize_plan_mode(state.get("plan_mode"))
@@ -660,6 +674,14 @@ def messaging_node(state: AgentState) -> dict:
             f"\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\u2501\n\n"
         )
 
+    # Milestone K: Build the A/B-test instruction block. Empty string when
+    # ab_test is False so the prompt is byte-identical to pre-Milestone-K.
+    ab_directive = (
+        f"━━━ A/B TEST DIRECTIVE ━━━\n{AB_PROMPT_INSTRUCTION}\n"
+        f"━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━\n\n"
+        if ab_test
+        else ""
+    )
     # Milestone L: build the strategic-frame directive and per-format CTA hints.
     # Both return empty strings in 'auto' mode, so the prompt is byte-identical
     # to pre-Milestone-L behavior when the user has not chosen a mode.
@@ -669,7 +691,7 @@ def messaging_node(state: AgentState) -> dict:
     prompt = f"""You are an expert field organizer and political messaging strategist.
 Generate targeted campaign messaging materials for the {district_label}.
 
-{language_directive}{mode_directive}━━━ HARD CONSTRAINT — READ CAREFULLY ━━━
+{language_directive}{ab_directive}{mode_directive}━━━ HARD CONSTRAINT — READ CAREFULLY ━━━
 You must draw ALL content EXCLUSIVELY from the RESEARCH FINDINGS section below.
 Do NOT invent statistics, polling numbers, quotes, or claims not present there.
 Do NOT reference issues, demographics, or events not mentioned in the research.
@@ -737,14 +759,50 @@ Do not rename, reorder, or omit any marker.
     # Surface the language in the header so the synthesizer (and any human
     # reviewer) can see at a glance which language was produced.
     lang_tag = f" | LANGUAGE: {language_name}" if language_code != "en" else ""
+    ab_tag   = " | AB: on" if ab_test else ""
     mode_tag = f" | MODE: {MODE_LABELS[plan_mode]}" if plan_mode != "auto" else ""
+
+    # Milestone K: when A/B mode is active, we prepend the sample-size math
+    # block to the FIRST eligible format we render. The block applies to
+    # every eligible format because they share a baseline conversion model,
+    # so showing it once is enough for the campaign manager.
+    ab_math_prepended = False
+    ab_math = format_ab_math_block(
+        baseline_rate=DEFAULT_BASELINE_RATE,
+        mde=DEFAULT_MDE,
+    ) if ab_test else ""
+
     for key, label in FORMAT_LABELS.items():
         content = sections.get(key)
-        if content:
-            formatted_outputs.append(
-                f"--- MESSAGING OUTPUT: {label} | DISTRICT: {district_label} "
-                f"| RESEARCH DATE: {most_recent_date}{lang_tag}{mode_tag} ---\n{content}\n"
+        if not content:
+            continue
+
+        # Milestone K: For eligible formats with A/B on, split the LLM's
+        # output on the variant markers and re-render with explicit
+        # **Variant A** / **Variant B** Markdown headers so reviewers can
+        # eyeball the comparison without hunting through prose.
+        if ab_test and is_ab_eligible(key):
+            split = split_variants(content)
+            rendered_body = (
+                f"**Variant A**\n{split['A']}\n\n"
+                f"**Variant B**\n{split['B']}\n"
             )
+            if split["axis"]:
+                rendered_body += f"\n{split['axis']}\n"
+            content_to_render = rendered_body
+        else:
+            content_to_render = content
+
+        prefix = ""
+        if ab_test and is_ab_eligible(key) and not ab_math_prepended:
+            prefix = ab_math + "\n"
+            ab_math_prepended = True
+
+        formatted_outputs.append(
+            f"--- MESSAGING OUTPUT: {label} | DISTRICT: {district_label} "
+            f"| RESEARCH DATE: {most_recent_date}{lang_tag}{ab_tag}{mode_tag} ---\n"
+            f"{prefix}{content_to_render}\n"
+        )
 
     if not formatted_outputs:
         return {
@@ -779,8 +837,8 @@ Do not rename, reorder, or omit any marker.
 
     logger.info(
         f"MessagingAgent: Generated {len(formatted_outputs)}/8 messaging formats "
-        f"for {district_label} in {language_name} (mode={plan_mode}) using research "
-        f"dated as recently as {most_recent_date}."
+        f"for {district_label} in {language_name} (ab_test={ab_test}, mode={plan_mode}) "
+        f"using research dated as recently as {most_recent_date}."
     )
 
     return {

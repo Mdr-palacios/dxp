@@ -31,6 +31,11 @@ class AgentState(TypedDict):
     #   "auto"         = no override; manager infers from the query (default behavior, equivalent to None)
     # Cascades into messaging tone, paid-media channel weighting, and CTA shape.
 
+    # Milestone K: A/B scaffolding toggle. When True, the messaging agent
+    # produces two variants (A and B) per eligible social-leaning format and
+    # appends a sample-size math block sized for the campaign's audience.
+    ab_test: Optional[bool]
+
     # -- File Handling --
     uploaded_file_path: Optional[str] # path to new file for ingesting
 
