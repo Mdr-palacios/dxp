@@ -12,11 +12,28 @@ from langchain_openai import ChatOpenAI, OpenAIEmbeddings
 from langchain_core.documents import Document as LCDocument
 from .state import AgentState
 
-# parsing for pdf and word doc uploads
-parser = LlamaParse(
-    api_key=os.environ.get("LLAMA_CLOUD_API_KEY"),
-    result_type="markdown"
-)
+# Parsing for PDF and Word doc uploads.
+#
+# LlamaParse pydantic-validates api_key at construction time and rejects
+# None or empty strings with a 500-tier traceback. That makes any preview
+# environment without a real key (e.g., a fresh Render free-tier deploy,
+# CI, a fork) crash on import: every chat request blows up before the
+# manager even routes to an agent. We do not need LlamaParse for prompts
+# that do not attach a PDF/DOCX (the demo carousel, win-number lookups,
+# CSV-only flows), so degrade gracefully:
+#
+#   - With a real key: build the parser as before.
+#   - Without one: leave parser=None and let the ingest path raise a
+#     friendly error only if a user actually uploads a PDF.
+_LLAMA_KEY = os.environ.get("LLAMA_CLOUD_API_KEY", "").strip()
+if _LLAMA_KEY:
+    parser = LlamaParse(api_key=_LLAMA_KEY, result_type="markdown")
+else:
+    parser = None
+    print(
+        "[ingestor] LLAMA_CLOUD_API_KEY not set: PDF/DOCX ingestion disabled. "
+        "Chat will work for prompts that do not attach a document."
+    )
 
 _VALID_DOC_TYPES = {
     "research_memo", "polling_data", "field_report",
@@ -143,7 +160,17 @@ def ingestor_node(state: AgentState):
                 "active_agents": ["ingestor"],
             }
 
-        # Parse unstructured document
+        # Parse unstructured document. If LLAMA_CLOUD_API_KEY was missing
+        # at boot, parser is None: surface a clear message instead of
+        # crashing with an AttributeError mid-pipeline.
+        if parser is None:
+            return {
+                "research_results": [
+                    "Document upload requires LLAMA_CLOUD_API_KEY to be set on "
+                    "the server. Ask an admin to add the key, then try again."
+                ],
+                "active_agents": ["ingestor"],
+            }
         llama_docs = parser.load_data(file_path)
 
         # Extract date and document_type from the first chunk's text.
