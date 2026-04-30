@@ -13,7 +13,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: powerbuilder 0.1\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-04-29 20:19-0400\n"
+"POT-Creation-Date: 2026-04-29 21:49-0400\n"
 "PO-Revision-Date: 2026-04-29 00:30-0400\n"
 "Last-Translator: Powerbuilder team (DRAFT, pending native review)\n"
 "Language-Team: Vietnamese <vi@li.org>\n"
@@ -23,15 +23,19 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=1; plural=0;\n"
 
+#: chat/demo_tiles.py:77
 msgid "Full plan"
 msgstr "Kế hoạch đầy đủ"
 
+#: chat/demo_tiles.py:79
 msgid "Gwinnett GOTV, Latinx 18 to 35"
 msgstr "Vận động đi bầu ở Gwinnett, cử tri Latinx 18 đến 35"
 
+#: chat/demo_tiles.py:80
 msgid "Spanish door-knock script and a CSV target list."
 msgstr "Kịch bản gõ cửa bằng tiếng Tây Ban Nha và danh sách mục tiêu dạng CSV."
 
+#: chat/demo_tiles.py:82
 msgid ""
 "Build a Gwinnett County GOTV plan targeting Latinx voters age 18 to 35. "
 "Generate a Spanish door-knock script and give me a CSV of the target list."
@@ -40,15 +44,19 @@ msgstr ""
 "Latinx từ 18 đến 35 tuổi. Tạo kịch bản gõ cửa bằng tiếng Tây Ban Nha và gửi "
 "cho tôi danh sách mục tiêu dạng CSV."
 
+#: chat/demo_tiles.py:89
 msgid "Win number"
 msgstr "Số phiếu cần thắng"
 
+#: chat/demo_tiles.py:91
 msgid "Win number for GA-07, midterm"
 msgstr "Số phiếu cần thắng cho GA-07, kỳ giữa nhiệm kỳ"
 
+#: chat/demo_tiles.py:92
 msgid "Quick lookup, shows CVAP and turnout math."
 msgstr "Tra cứu nhanh: hiển thị CVAP và phép tính tỷ lệ đi bầu."
 
+#: chat/demo_tiles.py:94
 msgid ""
 "What is the win number for Georgia's 7th Congressional District in a midterm "
 "cycle? Show me the math."
@@ -56,15 +64,19 @@ msgstr ""
 "Số phiếu cần thắng cho Khu vực Quốc hội số 7 của Georgia trong kỳ bầu cử "
 "giữa nhiệm kỳ là bao nhiêu? Hãy chỉ cho tôi cách tính."
 
+#: chat/demo_tiles.py:100
 msgid "Opposition"
 msgstr "Đối thủ"
 
+#: chat/demo_tiles.py:102
 msgid "GOP opponent in GA-06"
 msgstr "Đối thủ Cộng hòa ở GA-06"
 
+#: chat/demo_tiles.py:103
 msgid "Vulnerabilities and contrast angles from research books."
 msgstr "Điểm yếu và các góc tương phản, lấy từ sổ nghiên cứu."
 
+#: chat/demo_tiles.py:105
 msgid ""
 "Pull opposition research on the Republican candidate in Georgia's 6th "
 "Congressional District. Give me the top vulnerabilities and three contrast "
@@ -73,15 +85,19 @@ msgstr ""
 "Tra cứu nghiên cứu về ứng cử viên Cộng hòa ở Khu vực Quốc hội số 6 của "
 "Georgia. Liệt kê những điểm yếu chính và ba góc tin nhắn tương phản."
 
+#: chat/demo_tiles.py:112
 msgid "Multilingual"
 msgstr "Đa ngôn ngữ"
 
+#: chat/demo_tiles.py:114
 msgid "Vietnamese text to AAPI voters"
 msgstr "Tin nhắn tiếng Việt cho cử tri AAPI"
 
+#: chat/demo_tiles.py:115
 msgid "Tests language detection plus messaging agent."
 msgstr "Thử nghiệm phát hiện ngôn ngữ và tác nhân nhắn tin."
 
+#: chat/demo_tiles.py:117
 msgid ""
 "Draft a Vietnamese-language text message to AAPI voters in Gwinnett about "
 "early voting locations and hours."
@@ -89,12 +105,15 @@ msgstr ""
 "Hãy soạn một tin nhắn tiếng Việt gửi cử tri AAPI ở Gwinnett về địa điểm và "
 "giờ bỏ phiếu sớm."
 
+#: chat/demo_tiles.py:123
 msgid "Social pack"
 msgstr "Gói mạng xã hội"
 
+#: chat/demo_tiles.py:125
 msgid "Social media pack for GA-07 youth turnout"
 msgstr "Gói mạng xã hội để vận động cử tri trẻ ở GA-07"
 
+#: chat/demo_tiles.py:126
 msgid ""
 "Pair with the Mobilization mode toggle for GOTV-shaped CTAs across all eight "
 "formats."
@@ -102,6 +121,7 @@ msgstr ""
 "Kết hợp với chế độ Vận động để có lời kêu gọi hành động kiểu GOTV trên cả "
 "tám định dạng."
 
+#: chat/demo_tiles.py:128
 msgid ""
 "Build a social media pack for Georgia's 7th Congressional District youth "
 "turnout (18 to 29). Generate the Meta post, YouTube script, and TikTok "
@@ -115,15 +135,19 @@ msgstr ""
 "góc nhìn chi phí sinh hoạt khi nghiên cứu ủng hộ điều đó. Mẹo: chuyển nút "
 "Chế độ trên thanh nhập sang Vận động để có lời kêu gọi hành động kiểu GOTV."
 
+#: chat/demo_tiles.py:138
 msgid "Voter file"
 msgstr "Danh sách cử tri"
 
+#: chat/demo_tiles.py:140
 msgid "Segment my list and match scripts"
 msgstr "Phân nhóm danh sách và ghép kịch bản phù hợp"
 
+#: chat/demo_tiles.py:141
 msgid "Uses the attached synthetic voterfile in demo mode."
 msgstr "Dùng tệp cử tri tổng hợp đính kèm trong chế độ demo."
 
+#: chat/demo_tiles.py:143
 msgid ""
 "Segment my voter file by age cohort and party, then match each segment to "
 "the right canvassing script and turnout tactic."
@@ -132,64 +156,89 @@ msgstr ""
 "nhóm với kịch bản gõ cửa và chiến thuật vận động đi bầu phù hợp."
 
 #
+#: chat/views.py:113
 msgid "Incorrect password."
 msgstr "Mật khẩu không đúng."
+
+#: chat/views.py:115
 msgid "DEMO_PASSWORD is not configured: set it in your .env file."
 msgstr "DEMO_PASSWORD chưa được cấu hình: hãy đặt nó trong tệp .env của bạn."
+
+#: powerbuilder_app/settings.py:196
 msgid "English"
 msgstr "Tiếng Anh"
 
+#: powerbuilder_app/settings.py:197
 msgid "Español"
 msgstr "Tiếng Tây Ban Nha"
 
+#: powerbuilder_app/settings.py:198
 msgid "Tiếng Việt"
 msgstr "Tiếng Việt"
 
+#: scripts/_test_i18n.py:154 scripts/_test_i18n.py:164
+#: scripts/_test_i18n.py:175 templates/chat.html:1274
 msgid "New conversation"
 msgstr "Cuộc trò chuyện mới"
 
+#: scripts/_test_i18n.py:158 scripts/_test_i18n.py:168 templates/login.html:125
 msgid "Sign in"
 msgstr "Đăng nhập"
 
+#: templates/base.html:8 templates/welcome.html:211
 msgid "Powerbuilder"
 msgstr "Powerbuilder"
 
+#: templates/base.html:237
 msgid "Skip to content"
 msgstr "Bỏ qua đến nội dung chính"
+
+#: templates/base.html:272
 msgid "Beta"
 msgstr "Beta"
 
+#: templates/base.html:276
 msgid "Language"
 msgstr "Ngôn ngữ"
 
+#: templates/base.html:289
 #, python-format
 msgid "Switch language to %(lang)s"
 msgstr "Chuyển ngôn ngữ sang %(lang)s"
 
+#: templates/chat.html:3
 msgid "Chat: Powerbuilder"
 msgstr "Trò chuyện: Powerbuilder"
 
+#: templates/chat.html:1257
 msgid "Toggle conversation list"
 msgstr "Mở hoặc đóng danh sách cuộc trò chuyện"
 
+#: templates/chat.html:1293 templates/chat.html:1294
 msgid "Delete conversation"
 msgstr "Xoá cuộc trò chuyện"
 
+#: templates/chat.html:1304
 msgid "No conversations yet"
 msgstr "Chưa có cuộc trò chuyện nào"
 
+#: templates/chat.html:1325
 msgid "Powered by OpenAI, Pinecone, Census API"
 msgstr "Được hỗ trợ bởi OpenAI, Pinecone, Census API"
 
+#: templates/chat.html:1515
 msgid "What can I help you win?"
 msgstr "Tôi có thể giúp bạn giành chiến thắng ở đâu?"
 
+#: templates/chat.html:1516
 msgid "Pick a starter below or ask your own question."
 msgstr "Chọn một gợi ý bên dưới hoặc đặt câu hỏi của riêng bạn."
 
+#: templates/chat.html:1534
 msgid "Loads into the input box. Edit anything, then hit send."
 msgstr "Sẽ được tải vào ô nhập. Chỉnh sửa tuỳ ý rồi bấm gửi."
 
+#: templates/chat.html:1578
 msgid ""
 "<span class=\"vf-chip-strong\">Synthetic voterfile</span>, 50K Gwinnett rows "
 "attached"
@@ -197,43 +246,76 @@ msgstr ""
 "<span class=\"vf-chip-strong\">Danh sách cử tri mô phỏng</span>, đính kèm "
 "50.000 dòng dữ liệu của Gwinnett"
 
+#: templates/chat.html:1586
 msgid "Editing: submit will rerun and replace the previous response."
 msgstr ""
 "Đang chỉnh sửa: khi gửi, hệ thống sẽ chạy lại và thay câu trả lời trước."
 
+#: templates/chat.html:1587
 msgid "Cancel edit"
 msgstr "Huỷ chỉnh sửa"
 
+#: templates/chat.html:1618
 msgid "Ask Powerbuilder about your district, candidates, win numbers..."
 msgstr "Hỏi Powerbuilder về khu vực, ứng viên, hoặc số phiếu cần để thắng..."
 
+#: templates/chat.html:1619
 msgid "Message"
 msgstr "Tin nhắn"
 
+#: templates/chat.html:1623
 msgid "Send (Enter)"
 msgstr "Gửi (Enter)"
 
+#: templates/chat.html:1623
 msgid "Send"
 msgstr "Gửi"
 
+#: templates/chat.html:1666
 msgid ""
 "Powerbuilder analyzes your query using live Census, FEC, and election data."
 msgstr ""
 "Powerbuilder phân tích câu hỏi của bạn bằng dữ liệu thời gian thực từ "
 "Census, FEC và bầu cử."
 
+#: templates/login.html:3
 msgid "Sign in: Powerbuilder"
 msgstr "Đăng nhập: Powerbuilder"
 
+#: templates/login.html:44
 msgid "All the data, all the strategy,<br>so you can focus on winning."
 msgstr ""
 "Mọi dữ liệu, mọi chiến lược,<br>để bạn tập trung vào việc giành chiến thắng."
 
+#: templates/login.html:82
 msgid "Password"
 msgstr "Mật khẩu"
 
+#: templates/login.html:89
 msgid "Enter access password"
 msgstr "Nhập mật khẩu truy cập"
 
+#: templates/login.html:137
 msgid "User accounts and org-level login coming soon."
 msgstr "Tài khoản người dùng và đăng nhập cấp tổ chức sẽ sớm có."
+
+#: templates/welcome.html:3
+#| msgid "Powerbuilder"
+msgid "Welcome: Powerbuilder"
+msgstr "Chào mừng: Powerbuilder"
+
+#: templates/welcome.html:198
+msgid "Welcome"
+msgstr "Chào mừng"
+
+#: templates/welcome.html:221
+msgid "Ready to build power with you."
+msgstr "Sẵn sàng xây dựng sức mạnh cùng bạn."
+
+#: templates/welcome.html:224
+msgid "Let's get this <span class=\"accent-W\">W</span>."
+msgstr "Hãy giành chiến <span class=\"accent-W\">T</span>hắng này."
+
+#: templates/welcome.html:232
+msgid "Enter now"
+msgstr "Vào ngay"

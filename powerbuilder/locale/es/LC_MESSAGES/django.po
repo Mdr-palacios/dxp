@@ -10,7 +10,7 @@ msgid ""
 msgstr ""
 "Project-Id-Version: powerbuilder 0.1\n"
 "Report-Msgid-Bugs-To: \n"
-"POT-Creation-Date: 2026-04-29 20:19-0400\n"
+"POT-Creation-Date: 2026-04-29 21:49-0400\n"
 "PO-Revision-Date: 2026-04-29 00:30-0400\n"
 "Last-Translator: Powerbuilder team (DRAFT, pending native review)\n"
 "Language-Team: Spanish <es@li.org>\n"
@@ -20,15 +20,19 @@ msgstr ""
 "Content-Transfer-Encoding: 8bit\n"
 "Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
+#: chat/demo_tiles.py:77
 msgid "Full plan"
 msgstr "Plan completo"
 
+#: chat/demo_tiles.py:79
 msgid "Gwinnett GOTV, Latinx 18 to 35"
 msgstr "GOTV en Gwinnett, latinxs de 18 a 35"
 
+#: chat/demo_tiles.py:80
 msgid "Spanish door-knock script and a CSV target list."
 msgstr "Guion de puerta a puerta en español y un CSV de la lista objetivo."
 
+#: chat/demo_tiles.py:82
 msgid ""
 "Build a Gwinnett County GOTV plan targeting Latinx voters age 18 to 35. "
 "Generate a Spanish door-knock script and give me a CSV of the target list."
@@ -37,15 +41,19 @@ msgstr ""
 "de 18 a 35 años. Genera un guion de puerta a puerta en español y entrégame "
 "un CSV de la lista objetivo."
 
+#: chat/demo_tiles.py:89
 msgid "Win number"
 msgstr "Número de victoria"
 
+#: chat/demo_tiles.py:91
 msgid "Win number for GA-07, midterm"
 msgstr "Número de victoria para GA-07, intermedias"
 
+#: chat/demo_tiles.py:92
 msgid "Quick lookup, shows CVAP and turnout math."
 msgstr "Consulta rápida: muestra el CVAP y los cálculos de participación."
 
+#: chat/demo_tiles.py:94
 msgid ""
 "What is the win number for Georgia's 7th Congressional District in a midterm "
 "cycle? Show me the math."
@@ -53,17 +61,21 @@ msgstr ""
 "¿Cuál es el número de victoria para el 7.º distrito del Congreso de Georgia "
 "en un ciclo de elecciones intermedias? Muéstrame los cálculos."
 
+#: chat/demo_tiles.py:100
 msgid "Opposition"
 msgstr "Oposición"
 
+#: chat/demo_tiles.py:102
 msgid "GOP opponent in GA-06"
 msgstr "Rival republicano en GA-06"
 
+#: chat/demo_tiles.py:103
 msgid "Vulnerabilities and contrast angles from research books."
 msgstr ""
 "Vulnerabilidades y ángulos de contraste a partir de los libros de "
 "investigación."
 
+#: chat/demo_tiles.py:105
 msgid ""
 "Pull opposition research on the Republican candidate in Georgia's 6th "
 "Congressional District. Give me the top vulnerabilities and three contrast "
@@ -73,15 +85,19 @@ msgstr ""
 "distrito del Congreso de Georgia. Dame las principales vulnerabilidades y "
 "tres ángulos de mensaje de contraste."
 
+#: chat/demo_tiles.py:112
 msgid "Multilingual"
 msgstr "Multilingüe"
 
+#: chat/demo_tiles.py:114
 msgid "Vietnamese text to AAPI voters"
 msgstr "SMS en vietnamita a votantes AAPI"
 
+#: chat/demo_tiles.py:115
 msgid "Tests language detection plus messaging agent."
 msgstr "Prueba la detección de idioma y el agente de mensajería."
 
+#: chat/demo_tiles.py:117
 msgid ""
 "Draft a Vietnamese-language text message to AAPI voters in Gwinnett about "
 "early voting locations and hours."
@@ -89,12 +105,15 @@ msgstr ""
 "Redacta un mensaje de texto en vietnamita para votantes AAPI en Gwinnett "
 "sobre los lugares y horarios de votación anticipada."
 
+#: chat/demo_tiles.py:123
 msgid "Social pack"
 msgstr "Paquete social"
 
+#: chat/demo_tiles.py:125
 msgid "Social media pack for GA-07 youth turnout"
 msgstr "Paquete de redes sociales para movilizar el voto joven en GA-07"
 
+#: chat/demo_tiles.py:126
 msgid ""
 "Pair with the Mobilization mode toggle for GOTV-shaped CTAs across all eight "
 "formats."
@@ -102,6 +121,7 @@ msgstr ""
 "Combínalo con el modo Movilización para llamadas a la acción tipo GOTV en "
 "los ocho formatos."
 
+#: chat/demo_tiles.py:128
 msgid ""
 "Build a social media pack for Georgia's 7th Congressional District youth "
 "turnout (18 to 29). Generate the Meta post, YouTube script, and TikTok "
@@ -116,15 +136,19 @@ msgstr ""
 "de vida cuando la investigación lo respalde. Consejo: cambia el selector de "
 "Modo a Movilización para obtener llamadas a la acción tipo GOTV."
 
+#: chat/demo_tiles.py:138
 msgid "Voter file"
 msgstr "Padrón electoral"
 
+#: chat/demo_tiles.py:140
 msgid "Segment my list and match scripts"
 msgstr "Segmenta mi lista y empareja los guiones"
 
+#: chat/demo_tiles.py:141
 msgid "Uses the attached synthetic voterfile in demo mode."
 msgstr "Usa el padrón sintético adjunto en modo demo."
 
+#: chat/demo_tiles.py:143
 msgid ""
 "Segment my voter file by age cohort and party, then match each segment to "
 "the right canvassing script and turnout tactic."
@@ -134,64 +158,89 @@ msgstr ""
 "adecuados."
 
 #
+#: chat/views.py:113
 msgid "Incorrect password."
 msgstr "Contraseña incorrecta."
+
+#: chat/views.py:115
 msgid "DEMO_PASSWORD is not configured: set it in your .env file."
 msgstr "DEMO_PASSWORD no está configurada: defínela en tu archivo .env."
+
+#: powerbuilder_app/settings.py:196
 msgid "English"
 msgstr "Inglés"
 
+#: powerbuilder_app/settings.py:197
 msgid "Español"
 msgstr "Español"
 
+#: powerbuilder_app/settings.py:198
 msgid "Tiếng Việt"
 msgstr "Tiếng Việt"
 
+#: scripts/_test_i18n.py:154 scripts/_test_i18n.py:164
+#: scripts/_test_i18n.py:175 templates/chat.html:1274
 msgid "New conversation"
 msgstr "Nueva conversación"
 
+#: scripts/_test_i18n.py:158 scripts/_test_i18n.py:168 templates/login.html:125
 msgid "Sign in"
 msgstr "Iniciar sesión"
 
+#: templates/base.html:8 templates/welcome.html:211
 msgid "Powerbuilder"
 msgstr "Powerbuilder"
 
+#: templates/base.html:237
 msgid "Skip to content"
 msgstr "Saltar al contenido"
+
+#: templates/base.html:272
 msgid "Beta"
 msgstr "Beta"
 
+#: templates/base.html:276
 msgid "Language"
 msgstr "Idioma"
 
+#: templates/base.html:289
 #, python-format
 msgid "Switch language to %(lang)s"
 msgstr "Cambiar idioma a %(lang)s"
 
+#: templates/chat.html:3
 msgid "Chat: Powerbuilder"
 msgstr "Chat: Powerbuilder"
 
+#: templates/chat.html:1257
 msgid "Toggle conversation list"
 msgstr "Mostrar u ocultar la lista de conversaciones"
 
+#: templates/chat.html:1293 templates/chat.html:1294
 msgid "Delete conversation"
 msgstr "Eliminar conversación"
 
+#: templates/chat.html:1304
 msgid "No conversations yet"
 msgstr "Aún no hay conversaciones"
 
+#: templates/chat.html:1325
 msgid "Powered by OpenAI, Pinecone, Census API"
 msgstr "Con tecnología de OpenAI, Pinecone, Census API"
 
+#: templates/chat.html:1515
 msgid "What can I help you win?"
 msgstr "¿Qué te ayudo a ganar?"
 
+#: templates/chat.html:1516
 msgid "Pick a starter below or ask your own question."
 msgstr "Elige una sugerencia abajo o haz tu propia pregunta."
 
+#: templates/chat.html:1534
 msgid "Loads into the input box. Edit anything, then hit send."
 msgstr "Se carga en el cuadro de texto. Edita lo que quieras y luego envía."
 
+#: templates/chat.html:1578
 msgid ""
 "<span class=\"vf-chip-strong\">Synthetic voterfile</span>, 50K Gwinnett rows "
 "attached"
@@ -199,44 +248,77 @@ msgstr ""
 "<span class=\"vf-chip-strong\">Padrón sintético</span>, 50 mil filas de "
 "Gwinnett adjuntas"
 
+#: templates/chat.html:1586
 msgid "Editing: submit will rerun and replace the previous response."
 msgstr ""
 "Editando: al enviar se volverá a ejecutar y reemplazará la respuesta "
 "anterior."
 
+#: templates/chat.html:1587
 msgid "Cancel edit"
 msgstr "Cancelar edición"
 
+#: templates/chat.html:1618
 msgid "Ask Powerbuilder about your district, candidates, win numbers..."
 msgstr ""
 "Pregunta a Powerbuilder sobre tu distrito, candidatos, votos para ganar..."
 
+#: templates/chat.html:1619
 msgid "Message"
 msgstr "Mensaje"
 
+#: templates/chat.html:1623
 msgid "Send (Enter)"
 msgstr "Enviar (Intro)"
 
+#: templates/chat.html:1623
 msgid "Send"
 msgstr "Enviar"
 
+#: templates/chat.html:1666
 msgid ""
 "Powerbuilder analyzes your query using live Census, FEC, and election data."
 msgstr ""
 "Powerbuilder analiza tu consulta con datos en vivo del Census, la FEC y "
 "elecciones."
 
+#: templates/login.html:3
 msgid "Sign in: Powerbuilder"
 msgstr "Iniciar sesión: Powerbuilder"
 
+#: templates/login.html:44
 msgid "All the data, all the strategy,<br>so you can focus on winning."
 msgstr "Todos los datos, toda la estrategia,<br>para que te enfoques en ganar."
 
+#: templates/login.html:82
 msgid "Password"
 msgstr "Contraseña"
 
+#: templates/login.html:89
 msgid "Enter access password"
 msgstr "Ingresa la contraseña de acceso"
 
+#: templates/login.html:137
 msgid "User accounts and org-level login coming soon."
 msgstr "Cuentas de usuario y acceso por organización: próximamente."
+
+#: templates/welcome.html:3
+#| msgid "Powerbuilder"
+msgid "Welcome: Powerbuilder"
+msgstr "Bienvenido: Powerbuilder"
+
+#: templates/welcome.html:198
+msgid "Welcome"
+msgstr "Bienvenido"
+
+#: templates/welcome.html:221
+msgid "Ready to build power with you."
+msgstr "Listos para construir poder contigo."
+
+#: templates/welcome.html:224
+msgid "Let's get this <span class=\"accent-W\">W</span>."
+msgstr "Vamos por esta <span class=\"accent-W\">V</span>."
+
+#: templates/welcome.html:232
+msgid "Enter now"
+msgstr "Entrar ahora"

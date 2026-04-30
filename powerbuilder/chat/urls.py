@@ -11,6 +11,9 @@ urlpatterns = [
     path("login/",  views.login_view,  name="login"),
     path("logout/", views.logout_view, name="logout"),
 
+    # Welcome interstitial (shown once per session right after login)
+    path("welcome/", views.welcome_view, name="welcome"),
+
     # Chat UI
     path("chat/",   views.chat_view,          name="chat"),
 

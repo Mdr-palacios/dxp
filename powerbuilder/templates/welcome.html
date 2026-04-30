@@ -1,0 +1,264 @@
+{% extends "base.html" %}
+{% load i18n %}
+{% block title %}{% trans "Welcome: Powerbuilder" %}{% endblock %}
+
+{% block content %}
+{% comment %}
+Welcome interstitial.
+Shown once per session right after login. Auto-advances to /chat/
+after ~2.8s. Honors prefers-reduced-motion. Visually: animated
+headline, two-beat copy, a soft constellation that pulses in behind
+the text to suggest a coalition coming together. Uses the same
+design tokens as the rest of the app so light + dark themes work
+without overrides.
+{% endcomment %}
+<style>
+  /* Stage */
+  .welcome-stage {
+    position: relative;
+    flex: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 2rem 1.5rem;
+    background: var(--bg-secondary);
+    overflow: hidden;
+    isolation: isolate;
+  }
+
+  /* Soft radial glow behind the headline */
+  .welcome-stage::before {
+    content: "";
+    position: absolute;
+    inset: 0;
+    background:
+      radial-gradient(60% 50% at 30% 35%, var(--accent-glow), transparent 70%),
+      radial-gradient(50% 45% at 75% 70%, var(--accent-soft-bg-2), transparent 70%);
+    pointer-events: none;
+    z-index: -2;
+    opacity: 0;
+    animation: glow-in 1.6s ease-out 0.05s forwards;
+  }
+
+  /* Constellation dots scattered across the stage */
+  .welcome-dot {
+    position: absolute;
+    width: 6px;
+    height: 6px;
+    border-radius: 50%;
+    background: var(--accent);
+    opacity: 0;
+    box-shadow: 0 0 12px var(--accent-glow);
+    animation: dot-pulse 4.4s ease-in-out infinite;
+    z-index: -1;
+  }
+  .welcome-dot.small { width: 4px; height: 4px; }
+  .welcome-dot.large { width: 8px; height: 8px; }
+
+  /* Card */
+  .welcome-card {
+    position: relative;
+    text-align: center;
+    max-width: 680px;
+    padding: 1.5rem;
+  }
+
+  .welcome-eyebrow {
+    display: inline-block;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    text-transform: uppercase;
+    color: var(--accent);
+    background: var(--accent-soft-bg);
+    border: 1px solid var(--accent-soft-border);
+    padding: 0.3rem 0.7rem;
+    border-radius: 999px;
+    margin-bottom: 1.4rem;
+    opacity: 0;
+    animation: rise 0.6s ease-out 0.1s forwards;
+  }
+
+  .welcome-headline {
+    font-size: clamp(2rem, 6vw, 3.4rem);
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    margin: 0 0 0.7rem;
+  }
+
+  .welcome-headline .word {
+    display: inline-block;
+    opacity: 0;
+    transform: translateY(14px);
+    animation: rise 0.55s cubic-bezier(0.2, 0.7, 0.2, 1) forwards;
+  }
+
+  /* Stagger words */
+  .welcome-headline .word:nth-child(1) { animation-delay: 0.20s; }
+  .welcome-headline .word:nth-child(2) { animation-delay: 0.30s; }
+  .welcome-headline .word:nth-child(3) { animation-delay: 0.40s; }
+  .welcome-headline .word:nth-child(4) { animation-delay: 0.50s; }
+  .welcome-headline .word:nth-child(5) { animation-delay: 0.60s; }
+  .welcome-headline .word:nth-child(6) { animation-delay: 0.70s; }
+  .welcome-headline .word:nth-child(7) { animation-delay: 0.80s; }
+  .welcome-headline .word:nth-child(8) { animation-delay: 0.90s; }
+
+  .welcome-secondbeat {
+    font-size: clamp(1.6rem, 4.8vw, 2.6rem);
+    font-weight: 700;
+    line-height: 1.1;
+    letter-spacing: -0.02em;
+    color: var(--text-primary);
+    margin: 0 0 1.6rem;
+    opacity: 0;
+    animation: rise 0.6s ease-out 1.05s forwards;
+  }
+
+  .welcome-secondbeat .accent-W {
+    color: var(--accent);
+    font-size: 1.18em;
+    margin-left: 0.05em;
+    text-shadow: 0 0 24px var(--accent-glow);
+  }
+
+  .welcome-progress {
+    width: 160px;
+    height: 3px;
+    background: var(--surface-overlay);
+    border-radius: 999px;
+    margin: 0 auto;
+    overflow: hidden;
+    opacity: 0;
+    animation: rise 0.5s ease-out 1.3s forwards;
+  }
+
+  .welcome-progress-bar {
+    height: 100%;
+    width: 0;
+    background: var(--accent);
+    border-radius: 999px;
+    animation: progress-fill 1.5s linear 1.3s forwards;
+  }
+
+  .welcome-skip {
+    display: inline-block;
+    margin-top: 1.4rem;
+    color: var(--text-muted);
+    font-size: 0.78rem;
+    font-weight: 500;
+    text-decoration: none;
+    border-bottom: 1px dashed var(--border-strong);
+    padding-bottom: 1px;
+    transition: color 0.15s, border-color 0.15s;
+    opacity: 0;
+    animation: rise 0.5s ease-out 1.5s forwards;
+  }
+  .welcome-skip:hover,
+  .welcome-skip:focus-visible {
+    color: var(--accent);
+    border-color: var(--accent);
+  }
+
+  /* Animations */
+  @keyframes rise {
+    to { opacity: 1; transform: translateY(0); }
+  }
+  @keyframes glow-in {
+    to { opacity: 1; }
+  }
+  @keyframes dot-pulse {
+    0%, 100% { opacity: 0.0; transform: scale(0.6); }
+    50%      { opacity: 0.85; transform: scale(1); }
+  }
+  @keyframes progress-fill {
+    to { width: 100%; }
+  }
+
+  /* Reduced motion: keep the layout, drop animation */
+  @media (prefers-reduced-motion: reduce) {
+    .welcome-stage::before,
+    .welcome-eyebrow,
+    .welcome-headline .word,
+    .welcome-secondbeat,
+    .welcome-progress,
+    .welcome-progress-bar,
+    .welcome-skip,
+    .welcome-dot {
+      animation: none !important;
+      opacity: 1 !important;
+      transform: none !important;
+    }
+    .welcome-progress-bar { width: 100%; }
+    .welcome-dot { opacity: 0.45; }
+  }
+</style>
+
+<div class="welcome-stage" role="region" aria-label="{% trans 'Welcome' %}">
+  {# Constellation: nine dots positioned around the card. Decorative only #}
+  <span class="welcome-dot small"  aria-hidden="true" style="top: 18%; left: 12%; animation-delay: 0.4s;"></span>
+  <span class="welcome-dot"        aria-hidden="true" style="top: 28%; left: 78%; animation-delay: 1.0s;"></span>
+  <span class="welcome-dot large"  aria-hidden="true" style="top: 62%; left: 18%; animation-delay: 1.6s;"></span>
+  <span class="welcome-dot small"  aria-hidden="true" style="top: 72%; left: 70%; animation-delay: 0.7s;"></span>
+  <span class="welcome-dot"        aria-hidden="true" style="top: 38%; left: 50%; animation-delay: 2.1s;"></span>
+  <span class="welcome-dot small"  aria-hidden="true" style="top: 80%; left: 42%; animation-delay: 1.3s;"></span>
+  <span class="welcome-dot"        aria-hidden="true" style="top: 14%; left: 62%; animation-delay: 1.8s;"></span>
+  <span class="welcome-dot small"  aria-hidden="true" style="top: 50%; left: 88%; animation-delay: 0.9s;"></span>
+  <span class="welcome-dot small"  aria-hidden="true" style="top: 82%; left: 12%; animation-delay: 2.4s;"></span>
+
+  <div class="welcome-card" aria-live="polite">
+    <span class="welcome-eyebrow">{% trans "Powerbuilder" %}</span>
+
+    {% comment %}
+    Headline + second beat: rendered as a plain string for screen
+    readers / no-JS fallback. JavaScript below wraps each word in a
+    <span class="word"> for the staggered fade-in. We avoid Django
+    template gymnastics here so translators see one clean msgid per
+    sentence.
+    {% endcomment %}
+    <h1 class="welcome-headline" data-stagger="true">{% trans "Ready to build power with you." %}</h1>
+
+    <p class="welcome-secondbeat">
+      {% blocktrans %}Let's get this <span class="accent-W">W</span>.{% endblocktrans %}
+    </p>
+
+    <div class="welcome-progress" aria-hidden="true">
+      <div class="welcome-progress-bar"></div>
+    </div>
+
+    <a class="welcome-skip" href="{% url 'chat' %}">
+      {% trans "Enter now" %}
+    </a>
+  </div>
+</div>
+
+<script>
+  (function() {
+    // Wrap each word of the headline in a <span class="word"> so the
+    // staggered fade-in CSS picks them up. Locale-agnostic: works for
+    // any language by splitting on whitespace. Done client-side to
+    // keep the rendered HTML simple for screen readers (which read
+    // the whole sentence before JS runs).
+    var h1 = document.querySelector('.welcome-headline[data-stagger]');
+    if (h1 && !window.matchMedia('(prefers-reduced-motion: reduce)').matches) {
+      var text = h1.textContent.trim();
+      var words = text.split(/\s+/);
+      // Put the space BETWEEN <span> elements (not inside them) so
+      // browsers honor word-spacing even with display: inline-block.
+      h1.innerHTML = words.map(function(w) {
+        return '<span class="word">' + w + '</span>';
+      }).join(' ');
+    }
+
+    // Auto-advance to /chat/ after 2.8s. Reduced-motion users get an
+    // extra ~400ms since they aren't watching animations finish.
+    var prefersReduced = window.matchMedia &&
+      window.matchMedia('(prefers-reduced-motion: reduce)').matches;
+    var delay = prefersReduced ? 3200 : 2800;
+    setTimeout(function() {
+      window.location.href = "{% url 'chat' %}";
+    }, delay);
+  })();
+</script>
+{% endblock %}

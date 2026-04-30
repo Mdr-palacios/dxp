@@ -100,7 +100,11 @@ def login_view(request):
     if DEMO_PASSWORD and password == DEMO_PASSWORD:
         request.session["authenticated"] = True
         request.session["org_namespace"] = "general"
-        return redirect("chat")
+        # Show the welcome interstitial once per session. Cleared by
+        # welcome_view so the workspace loads directly on subsequent
+        # navigations (logout/login flushes the session, resetting it).
+        request.session["show_welcome"] = True
+        return redirect("welcome")
 
     # Localize at request time (gettext, not gettext_lazy): LocaleMiddleware
     # has already activated the right language for this request.
@@ -116,6 +120,26 @@ def login_view(request):
 def logout_view(request):
     request.session.flush()
     return redirect("login")
+
+
+# ---------------------------------------------------------------------------
+# Welcome interstitial
+# ---------------------------------------------------------------------------
+
+@demo_login_required
+def welcome_view(request):
+    """
+    Brief welcome page shown once per session right after login. Auto-
+    advances to the chat workspace after a short pause (handled
+    client-side in welcome.html). If the user lands here without the
+    show_welcome flag set (already saw it this session, or refreshed
+    the URL directly later), bounce straight to chat so we never block
+    a returning user with an interstitial.
+    """
+    if not request.session.pop("show_welcome", False):
+        return redirect("chat")
+    request.session.modified = True
+    return render(request, "welcome.html")
 
 
 # ---------------------------------------------------------------------------
