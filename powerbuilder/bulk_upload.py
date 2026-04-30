@@ -33,6 +33,18 @@ def bulk_upsert(directory_path: str, force_reindex: bool = False) -> None:
                         applied. When False (default), files already present in
                         Pinecone are skipped.
     """
+    # LlamaParse pydantic-validates api_key at construction time and rejects
+    # None or empty strings with a 500-tier traceback. Fail loudly up front so
+    # we do not waste time hitting Pinecone before discovering the real issue.
+    llama_key = os.environ.get("LLAMA_CLOUD_API_KEY", "").strip()
+    if not llama_key:
+        print(
+            "ERROR: LLAMA_CLOUD_API_KEY is not set. bulk_upload.py needs a real\n"
+            "       LlamaParse key to parse PDFs. Add it to your .env and retry.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     api_key    = os.getenv("PINECONE_API_KEY")
     index_name = os.getenv("OPENAI_PINECONE_INDEX_NAME")
 
@@ -41,7 +53,7 @@ def bulk_upsert(directory_path: str, force_reindex: bool = False) -> None:
 
     embeddings = OpenAIEmbeddings(model="text-embedding-3-small")
     llm        = ChatOpenAI(model="gpt-4o-mini", temperature=0)
-    parser     = LlamaParse(result_type="markdown")
+    parser     = LlamaParse(api_key=llama_key, result_type="markdown")
 
     files = [f for f in os.listdir(directory_path) if f.endswith(".pdf")]
     if not files:
