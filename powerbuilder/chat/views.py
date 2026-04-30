@@ -23,7 +23,7 @@ import uuid
 
 import markdown as md_lib
 from django.conf import settings
-from django.http import Http404, HttpResponse, StreamingHttpResponse
+from django.http import FileResponse, Http404, HttpResponse, StreamingHttpResponse
 from django.shortcuts import redirect, render
 from django.template.loader import render_to_string
 from django.utils.translation import gettext as _
@@ -277,7 +277,10 @@ def send_message_view(request):
         logger.exception("Pipeline error: %s", exc)
         return render(request, "partials/message.html", {"error": f"Pipeline error: {exc}"})
 
-    print(f"[DEBUG] run_query keys={list(result.keys())} | generated_file_path={result.get('generated_file_path')}", flush=True)
+    logger.debug(
+        "run_query keys=%s | generated_file_path=%s",
+        list(result.keys()), result.get("generated_file_path"),
+    )
 
     final_answer        = result.get("final_answer", "")
     active_agents       = result.get("active_agents", [])
@@ -646,13 +649,26 @@ def _build_done_payload(request, query: str, result: dict) -> dict:
 # File download
 # ---------------------------------------------------------------------------
 
+_DOWNLOAD_CONTENT_TYPES = {
+    ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+    ".csv":  "text/csv",
+    ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+}
+
+
 @demo_login_required
 def download_view(request, filename: str):
     """
-    Serves a file from the exports/ directory as an attachment.
-    Only .docx and .csv extensions are permitted; path traversal is rejected.
+    Serves a file from the exports/ directory as a streamed attachment.
+    Only .docx, .csv, .xlsx are permitted; path traversal is rejected by both
+    a string check on the request and a realpath confinement check on disk.
+
+    Uses FileResponse so large plan deliverables (full DOCX with paid-media
+    tables, multi-thousand-row precinct CSVs) don't have to be slurped into
+    memory before the first byte ships — the browser also gets an accurate
+    Content-Length so its progress bar is honest.
     """
-    # Security checks
+    # Reject obvious traversal / nested paths up front.
     if "/" in filename or "\\" in filename or ".." in filename:
         raise Http404
 
@@ -660,20 +676,23 @@ def download_view(request, filename: str):
     if ext not in _ALLOWED_DOWNLOAD_EXTS:
         raise Http404
 
-    filepath = os.path.join(EXPORTS_DIR, filename)
+    exports_root = os.path.realpath(EXPORTS_DIR)
+    filepath     = os.path.realpath(os.path.join(EXPORTS_DIR, filename))
+
+    # Defense in depth: the resolved path must live under EXPORTS_DIR. Catches
+    # symlinks pointing outside the exports tree even if the basename check passed.
+    if os.path.commonpath([exports_root, filepath]) != exports_root:
+        raise Http404
+
     if not os.path.isfile(filepath):
         raise Http404
 
-    with open(filepath, "rb") as fh:
-        content = fh.read()
-
-    content_types = {
-        ".docx": "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        ".csv":  "text/csv",
-        ".xlsx": "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    }
-    response = HttpResponse(content, content_type=content_types[ext])
-    response["Content-Disposition"] = f'attachment; filename="{filename}"'
+    response = FileResponse(
+        open(filepath, "rb"),
+        as_attachment=True,
+        filename=filename,
+        content_type=_DOWNLOAD_CONTENT_TYPES[ext],
+    )
     return response
 
 # ---------------------------------------------------------------------------
