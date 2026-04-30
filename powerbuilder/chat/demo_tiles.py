@@ -24,8 +24,18 @@ Schema (per tile):
 
 To add a tile: append a dict at the bottom of DEMO_TILES.
 To remove a tile: delete its dict.
-To reorder: rearrange the list — display order matches list order.
+To reorder: rearrange the list (display order matches list order).
 To recolor: change chip_kind to one of CHIP_KINDS.
+
+i18n (Milestone Q+): chip / headline / preview / prompt are wrapped in
+gettext_lazy so the carousel localizes when the user switches to Spanish
+or Vietnamese. Translations live in locale/<lang>/LC_MESSAGES/django.po.
+After editing English copy here, regenerate:
+
+    python manage.py makemessages -l es -l vi --no-location \\
+      --ignore=venv --ignore='venv/*' --ignore='**/venv/*'
+
+then update the new entries in the .po files and recompile with msgfmt.
 
 C3 note: keep the prompt phrasing nonpartisan-friendly. Issue framing and
 'leans Democratic' style hedges are fine; explicit candidate or party
@@ -33,7 +43,10 @@ boost language is not.
 """
 from __future__ import annotations
 
-from typing import TypedDict
+from typing import TypedDict, Union
+
+from django.utils.functional import Promise
+from django.utils.translation import gettext_lazy as _
 
 
 # Allowed chip color variants. Each maps to a .demo-tile-chip--<kind> CSS
@@ -42,24 +55,30 @@ from typing import TypedDict
 CHIP_KINDS: tuple[str, ...] = ("plan", "win", "opp", "lang", "vf", "social")
 
 
+# Type for translatable fields: either a plain str (e.g. the chip_kind
+# slug, which is never user-visible) or a lazy translation Promise that
+# resolves to a str at render time once the active locale is known.
+TransStr = Union[str, Promise]
+
+
 class DemoTile(TypedDict):
     """Static type for a single carousel tile."""
     id:        str
-    chip:      str
+    chip:      TransStr
     chip_kind: str
-    headline:  str
-    preview:   str
-    prompt:    str
+    headline:  TransStr
+    preview:   TransStr
+    prompt:    TransStr
 
 
 DEMO_TILES: list[DemoTile] = [
     {
         "id":        "gwinnett-gotv-latinx",
-        "chip":      "Full plan",
+        "chip":      _("Full plan"),
         "chip_kind": "plan",
-        "headline":  "Gwinnett GOTV, Latinx 18 to 35",
-        "preview":   "Spanish door-knock script and a CSV target list.",
-        "prompt": (
+        "headline":  _("Gwinnett GOTV, Latinx 18 to 35"),
+        "preview":   _("Spanish door-knock script and a CSV target list."),
+        "prompt": _(
             "Build a Gwinnett County GOTV plan targeting Latinx voters "
             "age 18 to 35. Generate a Spanish door-knock script and give "
             "me a CSV of the target list."
@@ -67,22 +86,22 @@ DEMO_TILES: list[DemoTile] = [
     },
     {
         "id":        "win-number-ga07-midterm",
-        "chip":      "Win number",
+        "chip":      _("Win number"),
         "chip_kind": "win",
-        "headline":  "Win number for GA-07, midterm",
-        "preview":   "Quick lookup, shows CVAP and turnout math.",
-        "prompt": (
+        "headline":  _("Win number for GA-07, midterm"),
+        "preview":   _("Quick lookup, shows CVAP and turnout math."),
+        "prompt": _(
             "What is the win number for Georgia's 7th Congressional "
             "District in a midterm cycle? Show me the math."
         ),
     },
     {
         "id":        "opp-research-ga06-gop",
-        "chip":      "Opposition",
+        "chip":      _("Opposition"),
         "chip_kind": "opp",
-        "headline":  "GOP opponent in GA-06",
-        "preview":   "Vulnerabilities and contrast angles from research books.",
-        "prompt": (
+        "headline":  _("GOP opponent in GA-06"),
+        "preview":   _("Vulnerabilities and contrast angles from research books."),
+        "prompt": _(
             "Pull opposition research on the Republican candidate in "
             "Georgia's 6th Congressional District. Give me the top "
             "vulnerabilities and three contrast messaging angles."
@@ -90,22 +109,22 @@ DEMO_TILES: list[DemoTile] = [
     },
     {
         "id":        "vietnamese-text-aapi",
-        "chip":      "Multilingual",
+        "chip":      _("Multilingual"),
         "chip_kind": "lang",
-        "headline":  "Vietnamese text to AAPI voters",
-        "preview":   "Tests language detection plus messaging agent.",
-        "prompt": (
+        "headline":  _("Vietnamese text to AAPI voters"),
+        "preview":   _("Tests language detection plus messaging agent."),
+        "prompt": _(
             "Draft a Vietnamese-language text message to AAPI voters in "
             "Gwinnett about early voting locations and hours."
         ),
     },
     {
         "id":        "social-pack-ga07-youth",
-        "chip":      "Social pack",
+        "chip":      _("Social pack"),
         "chip_kind": "social",
-        "headline":  "Social media pack for GA-07 youth turnout",
-        "preview":   "Pair with the Mobilization mode toggle for GOTV-shaped CTAs across all eight formats.",
-        "prompt": (
+        "headline":  _("Social media pack for GA-07 youth turnout"),
+        "preview":   _("Pair with the Mobilization mode toggle for GOTV-shaped CTAs across all eight formats."),
+        "prompt": _(
             "Build a social media pack for Georgia's 7th Congressional "
             "District youth turnout (18 to 29). Generate the Meta post, "
             "YouTube script, and TikTok script alongside the standard "
@@ -116,11 +135,11 @@ DEMO_TILES: list[DemoTile] = [
     },
     {
         "id":        "voterfile-segment-and-match",
-        "chip":      "Voter file",
+        "chip":      _("Voter file"),
         "chip_kind": "vf",
-        "headline":  "Segment my list and match scripts",
-        "preview":   "Uses the attached synthetic voterfile in demo mode.",
-        "prompt": (
+        "headline":  _("Segment my list and match scripts"),
+        "preview":   _("Uses the attached synthetic voterfile in demo mode."),
+        "prompt": _(
             "Segment my voter file by age cohort and party, then match "
             "each segment to the right canvassing script and turnout tactic."
         ),
@@ -136,6 +155,11 @@ def get_demo_tiles() -> list[DemoTile]:
     picks an unknown chip_kind, we filter the offender out and log via
     print() rather than crashing the empty-state. The carousel just shows
     fewer tiles instead of the whole page erroring.
+
+    Lazy-translated fields (Promise instances) are truthy, so the
+    `tile.get(k)` checks below still work without forcing a string
+    coercion (which would lock in the active locale at module import
+    time instead of at render time).
     """
     safe: list[DemoTile] = []
     required = ("id", "chip", "chip_kind", "headline", "preview", "prompt")

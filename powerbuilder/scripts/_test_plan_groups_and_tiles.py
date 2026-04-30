@@ -353,8 +353,9 @@ def test_chat_view_exposes_tiles():
 
     # Each tile's prompt text must appear in the rendered data-prompt attr
     for t in demo_tiles.get_demo_tiles():
-        # Django escapes apostrophes inside attribute values, so unescape first
-        assert t["prompt"] in body_unescaped, \
+        # Django escapes apostrophes inside attribute values, so unescape first.
+        # Tile fields are gettext_lazy proxies post-Milestone Q+, so coerce to str.
+        assert str(t["prompt"]) in body_unescaped, \
             f"prompt for tile {t['id']!r} not in response body"
         n += 1
 
