@@ -2,9 +2,11 @@
 
 **An AI-orchestrated civic engagement platform for nonpartisan voter outreach, education, and field operations.**
 
-Powerbuilder is a Django + LangGraph application that coordinates a team of specialist AI agents (researcher, win-number, precincts, messaging, opposition research, voter-file analyst, and more) to generate full civic engagement plans, segment-targeted messaging, and budget estimates from a single natural-language request. The current public deployment lives at [powerbuilder.app](https://powerbuilder.app).
+Powerbuilder is a Django + LangGraph application that coordinates a team of specialist AI agents (researcher, win-number, precincts, messaging, opposition research, voter-file analyst, and more) to generate full civic engagement plans, segment-targeted messaging, and budget estimates from a single natural-language request.
 
-Built by [Benjamin Oh](https://github.com/benoh20) and [Rosario Palacios](https://github.com/Mdr-palacios) as part of the **DxP Fellowship**.
+Built by [Benjamin Oh](https://github.com/benoh20) and [Rosario Palacios](https://github.com/Mdr-palacios) as equal partners through the **DxP Fellowship**.
+
+**Environments.** The production deployment lives at [powerbuilder.app](https://powerbuilder.app). A preview environment tracking `main` runs at [powerbuilder-preview.onrender.com](https://powerbuilder-preview.onrender.com) on Render's free tier, so cold-start can take up to 60 seconds on the first hit.
 
 ---
 
@@ -64,7 +66,7 @@ Most civic technology is sold to large institutions and staffed by analysts. The
 - **`chat/agents/voterfile_agent.py`**: vendor-aware voter file processor. Auto-detects TargetSmart / Catalist / L2 / VAN exports, standardizes column names, and segments by age cohort, language, geography, and turnout propensity.
 - **`chat/agents/precincts.py`** + **`win_number.py`** + **`election_results.py`**: geographic and electoral analysis. Pull live US Census CVAP and FEC data.
 - **`chat/agents/finance_agent.py`** + **`chat/agents/paid_media.py`**: cost calculator with two layers. The base layer prices door, phone, text, mail, and digital contacts against per-contact unit costs and FEC historical comparables. The paid-media layer (`paid_media.py`, codified from corpus file 07) builds a deterministic digital plan when a budget is set: 4 spend tiers, in-language CPM discount (22.5 percent), frequency-cap-based reach math, persuasion-point lift estimates, and a saturation cap that fires when the planned digital reach would exceed the persuadable universe.
-- **`chat/agents/export.py`**: synthesizer plus DOCX/CSV/XLSX renderer. Plan runs always emit a styled DOCX (Light Grid Accent 1 tables for win number, target precincts, per-contact rates, and the paid-media digital channel rollup) alongside a CSV companion of the target precinct list, so an operator gets both the strategy doc and the walk/call list from one chat turn.
+- **`chat/agents/export.py`**: synthesizer plus DOCX/CSV/XLSX renderer. Plan runs always emit a styled DOCX (Light Grid Accent 1 tables for win number, target precincts, per-contact rates, and the paid-media digital channel rollup) alongside a CSV companion of the target precinct list, so an operator gets both the strategy doc and the walk/call list from one chat turn. The synthesizer writes in the voice of the popular-education organizing tradition (re:power, Wellstone, Ruckus Society, FWD.us Community Accelerator) and infers a re:power power type (Through, Over, or With) from the query so every briefing opens with an explicit Theory of Change framed against the right power type. See Milestone R below for the research basis.
 - **`tool_templates/`**: editable Markdown templates for each output format (canvass scripts, phone scripts, etc.) plus `costs.json` for cost-per-contact rates. Drop a new `.md` in here to change copy structure without touching code.
 - **`tool_templates/best_practices/`**: 10 curated field-research files (Latinx GOTV, Spanish messaging norms, new-registrant outreach, contact-channel mix, Gen Z, Gwinnett context, paid-media digital benchmarks, AAPI multi-language outreach, AAPI extended languages, and rural and exurban organizing). Seeded into Pinecone via `python scripts/seed_best_practices.py`. The same script writes a local fallback index (`scripts/.local_corpus_index.json`) so the researcher keeps working in dev when Pinecone is unreachable.
 
@@ -182,7 +184,7 @@ python scripts/_validate_demo_voterfile.py
 python scripts/_test_language_and_chaining.py
 ```
 
-The demo-mode hardening branch ships a focused suite of deterministic tests that run without keys, without network, and without Django request mocking. They cover the parts of the pipeline most likely to silently regress:
+Powerbuilder ships a focused suite of deterministic tests that run without keys, without network, and without Django request mocking. They cover the parts of the pipeline most likely to silently regress:
 
 ```bash
 cd powerbuilder
@@ -194,9 +196,22 @@ cd powerbuilder
 ./venv/bin/python scripts/_test_persuadable_universe_wiring.py    # 9 assertions
 ./venv/bin/python scripts/_test_seed_verification.py              # 9 assertions
 ./venv/bin/python scripts/_test_social_scripts.py                 # 74 assertions
+./venv/bin/python scripts/_test_ab_scaffolding.py                 # K coverage
+./venv/bin/python scripts/_test_mobilization_persuasion_toggle.py # L coverage
+./venv/bin/python scripts/_test_pastel_theme.py                   # O coverage
+./venv/bin/python scripts/_test_accessibility.py                  # P coverage
+./venv/bin/python scripts/_test_i18n.py                           # Q coverage
+./venv/bin/python scripts/_test_welcome_flow.py                   # welcome interstitial (30 assertions)
+./venv/bin/python scripts/_test_synthesizer_organizer_voice.py    # R coverage (62 assertions)
 ```
 
-Across the full deterministic suite (18 files in `scripts/_test_*.py`), every test is green on `milestone-h-social-script-pack`.
+To run every deterministic test in one shot:
+
+```bash
+for f in scripts/_test_*.py; do ./venv/bin/python "$f" >/dev/null 2>&1 && echo "✓ $f" || echo "✗ $f"; done
+```
+
+Across the full deterministic suite (25 files in `scripts/_test_*.py` as of Milestone R), every test is green on `main`.
 
 ## Demo data
 
@@ -276,6 +291,44 @@ Milestone H adds three new messaging formats (Meta post, YouTube script, TikTok 
 
 **In-language captions.** Every variant supports a Spanish or Vietnamese caption toggle. The Spanish path is grounded in TargetSmart's 3.9 to 14.5 point turnout lift finding and in [Cisneros et al. (PNAS Nexus 2024)](https://pmc.ncbi.nlm.nih.gov/articles/PMC11561907/), which found that Spanish-language misinformation exposure raised vote-switching intent by 11 points; the rebuttal pattern in our caption template is structured to inoculate against the specific misinformation frames Cisneros et al. catalogued.
 
+### Milestone K: A/B test scaffolding
+
+The A/B variants toggle (off by default; flip on under the input box) makes the messaging agent produce two variants per eligible social-leaning format and append a sample-size math block sized for the campaign's audience. The pattern follows [Coppock, Hill, and Vavreck (APSR 2024)](https://www.cambridge.org/core/services/aop-cambridge-core/content/view/FF5BE6ED1553475F8321F7C4209357F7/S0003055423001387a.pdf), which found almost no political ad in their meta-analysis moved persuasion outside a tight band, meaning the only way to learn anything from a single creative is to run a real A/B with adequate sample size. The sample-size block surfaces the minimum impressions required to detect a 1-point lift at 80 percent power, so an organizer can decide before spending whether the test is even worth running.
+
+### Milestone L: mobilization vs. persuasion mode toggle
+
+A three-way mode selector under the input box (Auto, Mobilization, Persuasion) cascades into messaging tone, paid-media channel weighting, and CTA shape. The split is the operational form of the [Wesleyan Media Project 2024 summary](https://mediaproject.wesleyan.edu/2024-summary-062425/) and the [Tech for Campaigns 2024 digital ads report](https://www.techforcampaigns.org/results/2024-digital-ads-report) finding that mobilization-themed creative on issues like abortion access cost 1.8 to 5 times less per outcome than persuasion-themed creative on the same platforms. Auto mode infers from the query (district + propensity language usually means mobilization; competitive race language usually means persuasion); the explicit toggle exists for the cases where the organizer already knows which problem they are solving.
+
+### Milestone O: pastel light theme, dark mode, and theme switcher
+
+A three-way theme control (System, Light, Dark) lives in the bottom-left of the sidebar. Light mode uses a dusty-blue accent against off-white surfaces; dark mode uses the same accent against deep-slate. The choice to ship dark mode at all comes from the operational reality that nonprofit field staff often work late, in cars, on phones with low ambient light. The choice to default to System rather than forcing one mode follows accessibility guidance to respect user-level preferences (`prefers-color-scheme`) rather than override them.
+
+### Milestone P: accessibility pass
+
+Milestone P is the explicit pass to bring Powerbuilder up to a defensible WCAG 2.1 AA baseline before any external user testing. Concrete changes: a visible focus ring on every interactive element, a Skip to content link revealed on first tab, `prefers-reduced-motion` support that disables the welcome page word-stagger and other decorative motion, ARIA labels on every icon-only button (theme switcher, language switcher, mode toggle, A/B toggle, conversation history rename and reorder controls), and a minimum 16px font size on every body-text surface. The accessibility work is non-negotiable for a tool aimed at independent organizers who include disabled organizers, older volunteers, and screen-reader users.
+
+### Milestone Q: internationalization (Spanish and Vietnamese)
+
+Milestone Q wires the chat surface itself (not just generated content) for Spanish and Vietnamese. The implementation is Django gettext: every user-facing string in templates and views is wrapped in `{% trans %}` or `gettext()`, the catalogues live in `locale/es/LC_MESSAGES/django.po` and `locale/vi/LC_MESSAGES/django.po`, and `.mo` files are compiled with `msgfmt` directly (not `manage.py compilemessages`, which scans the venv). A persistent EN / ES / VI language switcher in the header sets a session cookie via `i18n/setlang/`. Translated surfaces include the demo tiles, the login error messages, the welcome interstitial copy, every form label, and the skip-to-content link. Translation accuracy was reviewed in draft and is flagged for native-speaker review before any non-English public launch.
+
+The research basis is [TargetSmart's Spanish-language analysis](https://targetsmart.com/research-shows-latinx-voters-want-ads-in-spanish-bolstering-the-case-for-more-spending/) (3.9 to 14.5 point turnout lift from in-language outreach) plus the [AAPI Data 2022 voter survey](https://aapidata.com/) finding that Vietnamese voters in particular show the largest gap between language preference at home and language of campaign contact received. Translating only the generated content while leaving the chat shell in English would have made the tool harder to use for the exact organizers it is built for.
+
+### Welcome interstitial
+
+A short animated page between login and the chat tiles (`/welcome/`) exists to give new users a one-beat pause to register that something different from a generic chatbot is being built with them. The headline ("Ready to build power with you. Let's get this W.") is staggered word by word, a soft radial glow fades in behind it, and a 1.5-second progress bar auto-advances to the chat. An Enter now skip link is always visible for users who do not want the animation. The page respects `prefers-reduced-motion`, fires only on the first login per session, and the session flag is flushed on logout so the next login shows it again. Spanish and Vietnamese translations preserve the W and T victory letters: "Listos para construir poder contigo. Vamos por esta V" (V de Victoria) and "Sẵn sàng xây dựng sức mạnh cùng bạn. Hãy giành chiến Thắng này" (T from Thắng = victory).
+
+### Milestone R: organizer-native synthesizer voice with power-type inference
+
+Milestone R rewrites the synthesizer system prompt and prompt scaffolding so every briefing reads like it was written by an organizer in the popular-education tradition rather than a generic political-marketing strategist. The change has three parts.
+
+**Power-type inference.** A small keyword scorer (`_infer_power_type` in `chat/agents/export.py`) classifies every query into one of [re:power](https://www.repower.org/)'s three power types: **Power Through** (electoral, taking power via state mechanisms), **Power Over** (forcing institutions to concede through pressure and escalation), or **Power With** (building alternative structures and mutual-aid capacity). Electoral keywords (voter, precinct, primary, win number) plus an electoral-agent tiebreaker push to Through; pressure keywords (escalation, target, decision-maker, march, boycott) push to Over; alternative-structure keywords (mutual aid, base building, leader development, know your rights) push to With. The inferred type is stamped into `structured_data` so the chat UI can render a power-type chip without re-inferring.
+
+**Theory of Change opening.** The system prompt now requires every briefing to open with a Theory of Change in the form *"If we do X, then Y will happen"* before naming any tactic, channel, or content. This sequencing follows the re:power curriculum's explicit pedagogical principle: *"What is your goal? What is your path? Who are your people? And then you can pick tools."* Tools-before-strategy is the most common failure mode of generic AI campaign tools, and the prompt scaffolding refuses to allow it.
+
+**Canonical organizing vocabulary and a What This Won't Do footer.** The prompt injects a 15-term glossary (base, persuadable, target, ladder of engagement, rung, spectrum of allies, escalation, PSAA, mobilize vs. organize, declare victory and run, etc.) and an explicit anti-marketing translation rule: when tempted to write *followers*, write *base*; when tempted to write *audience*, write *constituency* or *persuadable audience*; when tempted to write *engagement funnel*, write *ladder of engagement*; when tempted to write *call to action*, write *ask* and locate it on a specific rung. Every full plan ends with a What This Won't Do section naming the limits that still require human judgment (1:1 conversations with the base, voter file or VAN access, target verification before escalation, real-time rapid-response decisions). The footer is what keeps the tool honest: it tells the operator where the AI stops and the organizer begins.
+
+The 30-term canonical vocabulary the glossary is drawn from is documented in `notes/organizing_pdfs_analysis.md`, a corpus analysis of ten organizing curricula spanning re:power's digital organizing curriculum, the FWD.us Community Accelerator, the Wellstone Action ten-point power map, the Ruckus Society four-quadrant power map, and the Caring Across Generations cultural campaign methodology.
+
 ### What we deliberately did not build
 
 Based on [Hackenburg and Margetts (PNAS 2024)](https://pnas.org/doi/10.1073/pnas.2403116121), Powerbuilder does not offer narrow microtargeting features (psychographic match, individual-level persuasion scores). The evidence for null effects is strong enough that shipping those features would be selling a result the literature does not support. We surface segment-level targeting (age cohort, language, geography, propensity) and stop there.
@@ -284,9 +337,11 @@ Based on [Hackenburg and Margetts (PNAS 2024)](https://pnas.org/doi/10.1073/pnas
 
 - Milestone I, creator and influencer match agent, picks up the Chmel et al. finding directly.
 - Milestone J, relational organizing pack, operationalizes the Schein et al. CACE.
-- Milestone K, A/B test scaffolding, builds on Coppock et al.
-- Milestone L, mobilization vs. persuasion mode toggle, formalizes the Wesleyan 2024 distinction across all formats.
 - Milestone M, Spanish-language misinformation rebuttal mode, extends Cisneros et al. into a first-class agent.
+- Milestone N, Action Network and organizing-platform integration, lets the messaging agent push directly to the canvas list, phone bank, or text bank an organizer is already running.
+- Milestone S, ladder-of-engagement view, renders campaign output as 4 to 7 visual rungs, each with ask, content, success metric, and ES / VI variants.
+- Milestone T, popular-education companion, ships a one-page "Powerbuilder for Organizers" PDF mapping every feature to the popular-education concept it operationalizes.
+- Milestone U, curated popular-education corpus, loads the ten organizing curricula analysed for Milestone R into a dedicated Pinecone namespace so the researcher can cite re:power, Wellstone, Ruckus, and FWD.us by name.
 
 ---
 
@@ -299,3 +354,4 @@ MIT License. See [LICENSE](./LICENSE) for full text.
 - **Analyst Institute, CIRCLE (Tufts), Equis Research, Voto Latino, NextGen America**: the public field-research corpus that informs the best-practices set.
 - **American Bridge**: research book corpus.
 - **TargetSmart, Catalist, L2, VAN**: voter file format references.
+- **re:power, Wellstone Action, Ruckus Society, FWD.us Community Accelerator, Caring Across Generations**: the popular-education organizing tradition the synthesizer voice (Milestone R) is built on.
